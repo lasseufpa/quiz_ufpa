@@ -1,0 +1,270 @@
+{% extends "layout.html" %}
+{% block title %}(Host) {{ quiz_title }}{% endblock %}
+
+{% block content %}
+<div id="lobby">
+    <h1>{{ quiz_title }}</h1>
+    <h2>Aguardando jogadores...</h2>
+    <p>(Peça para os alunos acessarem: <strong>http://{{ host_ip }}:5000</strong>)</p>
+
+    <ul id="player-list" class="player-list">
+    </ul>
+
+    <button id="start-game-btn" disabled>Iniciar Jogo (0 Jogadores)</button>
+    <button id="force-end-btn" style="display: none; background-color: #dc3545; margin-top: 10px;">Finalizar
+        Quiz</button>
+</div>
+
+<div id="question-view" style="display: none;">
+    <h3 class="question-text" id="question-text">Texto da Pergunta</h3>
+    <p>Respostas recebidas: <span id="answer-count">0</span> / <span id="total-players">0</span></p>
+    <button id="show-results-btn">Mostrar Resultados</button>
+    <button id="force-end-question-btn" style="display: none; background-color: #dc3545; margin-left: 10px;">Finalizar
+        Quiz</button>
+</div>
+
+<div id="results-view" style="display: none;">
+    <h3>Distribuição das respostas</h3>
+    <img id="results-chart" src="" alt="Gráfico das respostas" style="max-width: 500px;">
+    <p>A resposta correta era: <strong id="correct-answer-text"></strong></p>
+    <button id="next-question-btn">Próxima Pergunta</button>
+    <button id="force-end-results-btn" style="background-color: #dc3545; margin-left: 10px;">Finalizar Quiz</button>
+</div>
+
+
+
+<div id="game-over-view" style="display: none;">
+    <h1>Fim do Quiz!</h1>
+    <h4>Placar Final:</h4>
+    <ul id="final-score-list" class="player-list">
+    </ul>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const startBtn = document.getElementById('start-game-btn');
+    const playerListEl = document.getElementById('player-list');
+
+    const forceEndBtn = document.getElementById('force-end-btn');
+    const forceEndQuestionBtn = document.getElementById('force-end-question-btn');
+    const forceEndResultsBtn = document.getElementById('force-end-results-btn');
+
+
+    const lobbyView = document.getElementById('lobby');
+    const questionView = document.getElementById('question-view');
+    const resultsView = document.getElementById('results-view');
+    const gameOverView = document.getElementById('game-over-view');
+
+    const questionTextEl = document.getElementById('question-text');
+    const answerCountEl = document.getElementById('answer-count');
+    const totalPlayersEl = document.getElementById('total-players');
+
+    const correctTextEl = document.getElementById('correct-answer-text');
+    const scoreListEl = document.getElementById('score-list');
+    const finalScoreListEl = document.getElementById('final-score-list');
+
+    // Avisa o servidor que esta é a tela do host
+    socket.emit('host_join');
+
+    // Atualiza a lista de jogadores no lobby
+    socket.on('update_player_list', (players) => {
+        playerListEl.innerHTML = '';
+        players.forEach(name => {
+            const li = document.createElement('li');
+            li.textContent = name;
+            playerListEl.appendChild(li);
+        });
+        startBtn.textContent = `Iniciar Jogo (${players.length} Jogadores)`;
+        startBtn.disabled = players.length === 0;
+
+        forceEndBtn.style.display = players.length > 0 ? 'block' : 'none';
+
+    });
+
+    // Função para finalizar o quiz
+    function forceEndQuiz() {
+        if (confirm('Tem certeza que deseja finalizar o quiz? Isso mostrará o placar final imediatamente.')) {
+            socket.emit('force_end_quiz');
+        }
+    }
+
+    // Event listeners para os botões de finalizar
+    forceEndBtn.addEventListener('click', forceEndQuiz);
+    forceEndQuestionBtn.addEventListener('click', forceEndQuiz);
+    forceEndResultsBtn.addEventListener('click', forceEndQuiz);
+
+    // Iniciar Jogo
+    startBtn.addEventListener('click', () => {
+        socket.emit('start_game');
+    });
+
+    // Mostra a pergunta
+    socket.on('show_question', (data) => {
+        lobbyView.style.display = 'none';
+        resultsView.style.display = 'none';
+        questionView.style.display = 'block';
+
+        questionTextEl.textContent = `(${data.question_index + 1}/${data.total_questions}) ${data.text}`;
+
+        // Exibe as opções completas
+        const optionsContainerId = 'options-list-host';
+        let optionsContainer = document.getElementById(optionsContainerId);
+        if (!optionsContainer) {
+            optionsContainer = document.createElement('div');
+            optionsContainer.id = optionsContainerId;
+            optionsContainer.classList.add('grid-options');
+            questionTextEl.insertAdjacentElement('afterend', optionsContainer);
+        }
+
+        optionsContainer.innerHTML = '';
+        data.options.forEach((opt, i) => {
+            const btn = document.createElement('div');
+            btn.classList.add('option-btn');
+            btn.textContent = `${String.fromCharCode(65 + i)}) ${opt}`;
+            optionsContainer.appendChild(btn);
+        });
+    });
+
+
+    // Atualiza a contagem de respostas
+    socket.on('update_answer_count', (data) => {
+        answerCountEl.textContent = data.answered;
+        totalPlayersEl.textContent = data.total;
+    });
+
+    // Botão de Mostrar Resultados
+    document.getElementById('show-results-btn').addEventListener('click', () => {
+        socket.emit('show_results');
+    });
+
+    // Mostra os resultados da pergunta
+    socket.on('show_results', (data) => {
+        questionView.style.display = 'none';
+        resultsView.style.display = 'block';
+        correctTextEl.textContent = data.correct_option_text;
+
+        // Atualiza a imagem do gráfico gerado pelo Python
+        const chartImg = document.getElementById('results-chart');
+        chartImg.src = data.chart_path + '?t=' + new Date().getTime(); // força atualização
+    });
+
+
+    // Botão de Próxima Pergunta
+    document.getElementById('next-question-btn').addEventListener('click', () => {
+        socket.emit('next_question');
+    });
+
+    // Fim de jogo
+    // Fim de jogo
+    socket.on('game_over', (leaderboard) => { // Recebe o placar ordenado (decrescente)
+        resultsView.style.display = 'none';
+        gameOverView.style.display = 'block';
+        forceEndBtn.style.display = 'none'; // Esconde o botão no lobby
+
+        finalScoreListEl.innerHTML = '';
+
+        if (leaderboard.length === 0) {
+            const li = document.createElement('li');
+            li.textContent = 'Nenhum jogador participou.';
+            finalScoreListEl.appendChild(li);
+            return;
+        }
+
+        // --- INÍCIO DA LÓGICA DO TOP 3 COM EMPATE ---
+        // Encontra a pontuação mínima dentro do top 3
+        const thirdScore = leaderboard.length >= 3 ? leaderboard[2].score : leaderboard[leaderboard.length - 1].score;
+
+        // Inclui todos os jogadores com pontuação >= à do 3º colocado
+        const topPlayers = leaderboard.filter(p => p.score >= thirdScore);
+
+        // Emojis de medalha (serão atribuídos apenas aos 3 melhores, mesmo que haja empate)
+        const medals = ['🥇', '🥈', '🥉'];
+
+        topPlayers.forEach((player, index) => {
+            const li = document.createElement('li');
+
+            // Medalha só para os 3 primeiros distintos
+            if (index < 3) {
+                li.textContent = `${medals[index]} ${player.nickname}: ${player.score} pontos`;
+            } else {
+                li.textContent = `${player.nickname}: ${player.score} pontos`;
+            }
+
+            // Cores e estilos conforme posição
+            if (player.score === leaderboard[0].score) {
+                li.style.fontWeight = 'bold';
+                li.style.fontSize = '1.2em';
+                li.style.backgroundColor = '#fff3cd'; // Ouro
+            } else if (player.score === leaderboard[1]?.score) {
+                li.style.backgroundColor = '#e2e3e5'; // Prata
+            } else if (player.score === leaderboard[2]?.score) {
+                li.style.backgroundColor = '#ffe8cc'; // Bronze
+            }
+
+            finalScoreListEl.appendChild(li);
+        });
+    });
+
+
+    // Alguém saiu
+    socket.on('player_left', (data) => {
+        // Apenas recarrega a lista de jogadores (a lógica completa está no servidor)
+        socket.emit('host_join');
+    });
+
+    socket.on('game_reset', () => {
+        alert("O Jogo foi resetado!");
+        window.location.reload();
+    });
+
+    // Importa Chart.js (local, sem internet)
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/chart.js'; // Se quiser offline, posso te mandar o arquivo local também
+    document.head.appendChild(script);
+
+    let answersChart = null;
+
+    socket.on('show_results', (data) => {
+        questionView.style.display = 'none';
+        resultsView.style.display = 'block';
+        correctTextEl.textContent = data.correct_option_text;
+
+        const labels = data.players ? ['A', 'B', 'C', 'D'].slice(0, data.answer_distribution.length) : [];
+        const values = data.answer_distribution;
+
+        const ctx = document.getElementById('answersChart').getContext('2d');
+
+        if (answersChart) {
+            answersChart.destroy();
+        }
+
+        answersChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Número de respostas',
+                    data: values,
+                    backgroundColor: ['#007bff', '#28a745', '#ffc107', '#dc3545'].slice(0, values.length)
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false },
+                    title: {
+                        display: true,
+                        text: 'Distribuição das respostas'
+                    }
+                },
+                scales: {
+                    y: { beginAtZero: true, precision: 0 }
+                }
+            }
+        });
+    });
+
+
+</script>
+{% endblock %}

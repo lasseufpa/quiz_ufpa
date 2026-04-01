@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Flask-Quiz{% endblock %}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* --- Reset Básico & Estilo Geral --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            /* Nova fonte */
+            /* Fundo gradiente vibrante */
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            /* Centraliza o conteúdo vertical e horizontalmente */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        /* --- O Cartão Principal --- */
+        .container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 16px;
+            /* Mais arredondado */
+            /* Sombra suave para dar profundidade */
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            padding: 40px;
+            /* Mais preenchimento */
+            text-align: center;
+            overflow: hidden;
+            /* Para conter os elementos */
+        }
+
+        /* --- Títulos --- */
+        h1 {
+            color: #4a4a4a;
+            font-weight: 700;
+            margin-bottom: 0.5em;
+        }
+
+        h2 {
+            color: #5a5a5a;
+            font-weight: 700;
+            margin-bottom: 1em;
+        }
+
+        h3 {
+            white-space: pre-line;
+            text-align: left;
+            color: #333;
+            font-weight: 700;
+            font-size: 1.75rem;
+            /* Título da pergunta maior */
+            margin-bottom: 1.5rem;
+            line-height: 1.4;
+            
+        }
+
+        /* --- Botões Padrão & Inputs --- */
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 15px 25px;
+            /* Botões maiores */
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            /* Fonte maior */
+            font-weight: 700;
+            margin: 5px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            /* Efeito de "levantar" */
+            box-shadow: 0 5px 15px rgba(0, 123, 255, 0.3);
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1.1rem;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #ddd;
+            width: 80%;
+            max-width: 350px;
+            margin-bottom: 15px;
+            text-align: center;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 10px rgba(0, 123, 255, 0.2);
+            outline: none;
+        }
+
+        /* --- ★ ESTILO DAS OPÇÕES DO QUIZ (O mais importante) ★ --- */
+        .grid-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            /* Mais espaçamento */
+            margin-top: 20px;
+        }
+
+        .option-btn {
+            padding: 25px 20px;
+            /* Botões de opção bem grandes */
+            font-size: 1.3rem;
+            /* Texto da opção grande */
+            font-weight: 700;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            /* Efeito de transição */
+            transition: transform 0.2s ease, opacity 0.3s ease;
+            min-height: 120px;
+            /* Altura mínima */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .option-btn:not(:disabled):hover {
+            transform: scale(1.03);
+            /* Efeito de "zoom" */
+        }
+
+        /* As cores no estilo Kahoot! */
+        /* Usa :nth-child(4n+X) para ciclar as 4 cores */
+        .option-btn:nth-child(4n+1) {
+            background-color: #dc3545;
+        }
+
+        /* Vermelho */
+        .option-btn:nth-child(4n+2) {
+            background-color: #007bff;
+        }
+
+        /* Azul */
+        .option-btn:nth-child(4n+3) {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        /* Amarelo */
+        .option-btn:nth-child(4n+4) {
+            background-color: #28a745;
+        }
+
+        /* Verde */
+
+        /* Quando um botão é clicado (o JS o desabilita) */
+        .option-btn:disabled {
+            opacity: 0.7;
+            /* Esmaece os não selecionados */
+            transform: none;
+            background-color: #ccc !important;
+            /* Cor padrão para desabilitado (importante para sobrepor) */
+            color: #555 !important;
+            box-shadow: none;
+        }
+
+        /* O JS do player.html (versão lock-step) aplica um style.backgroundColor
+           no botão clicado. Esse style inline VAI sobrepor o :disabled,
+           o que é ótimo! O botão clicado ficará azul e os outros cinzas. */
+
+        /* --- Estilo da Lista de Jogadores (Lobby & Admin) --- */
+        .player-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 20px;
+            max-width: 450px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .player-list li {
+            background-color: #f1f1f1;
+            margin: 8px 0;
+            padding: 12px 15px;
+            border-radius: 25px;
+            /* Formato de "pílula" */
+            font-weight: 700;
+            color: #555;
+            text-align: center;
+        }
+
+        /* --- Estilos de Resultado (Certo/Errado) --- */
+        #result-view h2 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        #result-view #correct-answer-text {
+            font-size: 1.2rem;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            border: 2px solid #ddd;
+        }
+
+        /* --- Pódio/Placar Final --- */
+        #final-score-list li:nth-child(1) {
+            background-color: #fff3cd !important;
+            font-size: 1.2em;
+            font-weight: 700;
+            border: 2px solid #ffeeba;
+        }
+
+        #final-score-list li:nth-child(2) {
+            background-color: #e2e3e5 !important;
+            border: 2px solid #d6d8db;
+        }
+
+        #final-score-list li:nth-child(3) {
+            background-color: #ffe8cc !important;
+            border: 2px solid #ffddb1;
+        }
+
+        /* --- Estilo da Contagem de Respostas (Host) --- */
+        /* (Este seletor mira o <p> dentro da <div> #question-view) */
+        #question-view p {
+            font-size: 1.25rem;
+            /* Aumenta o tamanho da fonte */
+            font-weight: 700;
+            /* Deixa em negrito */
+            color: #555;
+            margin-top: 2.5rem;
+            /* Adiciona mais espaço acima */
+            margin-bottom: 1.5rem;
+            /* Adiciona espaço abaixo (antes do botão) */
+        }
+
+        /* --- Estilos do Admin (para os botões de editar/remover) --- */
+        .user-list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            text-align: left;
+        }
+
+        .user-list-item:last-child {
+            border-bottom: none;
+        }
+
+        .user-list-item .nickname-display,
+        .user-list-item .edit-form {
+            flex-grow: 1;
+        }
+
+        .user-list-item .edit-form input {
+            font-size: 16px;
+            padding: 5px;
+            border: 1px solid #007bff;
+            border-radius: 4px;
+        }
+
+        .user-list-item .actions button {
+            margin-left: 5px;
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        .btn-edit {
+            background-color: #ffc107;
+            color: black;
+        }
+
+        .btn-remove {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .btn-save {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .btn-cancel {
+            background-color: #6c757d;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
+
+    <script>
+        // Conecta ao servidor. 
+        const socket = io(); 
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

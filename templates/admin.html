@@ -1,0 +1,235 @@
+{% extends "layout.html" %}
+{% block title %}Admin - Gerenciar Usuários{% endblock %}
+
+{% block content %}
+<style>
+    .user-list-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+    }
+
+    .user-list-item:last-child {
+        border-bottom: none;
+    }
+
+    .user-list-item .nickname-display,
+    .user-list-item .edit-form {
+        flex-grow: 1;
+    }
+
+    .user-list-item .edit-form input {
+        font-size: 16px;
+        padding: 5px;
+        border: 1px solid #007bff;
+        border-radius: 4px;
+    }
+
+    .user-list-item .actions button {
+        margin-left: 5px;
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+
+    .btn-edit {
+        background-color: #ffc107;
+        color: black;
+    }
+
+    .btn-remove {
+        background-color: #dc3545;
+        color: white;
+    }
+
+    .btn-save {
+        background-color: #28a745;
+        color: white;
+    }
+
+    .btn-cancel {
+        background-color: #6c757d;
+        color: white;
+    }
+</style>
+
+<a href="{{ url_for('admin_logout') }}" style="float: right; color: #dc3545; text-decoration: none;">
+    Sair (Logout)
+</a>
+
+<h1>Painel de Administração</h1>
+<p>Gerencie os usuários que podem participar dos quizzes.</p>
+
+<div id="add-user-form">
+    <input type="text" id="nickname-input" placeholder="Nome do novo jogador" style="width: 250px;">
+    <button id="add-btn">Adicionar</button>
+</div>
+
+<hr style="margin: 30px 0;">
+
+<h2>Usuários Cadastrados</h2>
+
+<ul id="user-list" class="player-list" style="max-width: 500px; margin: auto; text-align: left; padding: 0;">
+</ul>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const nicknameInput = document.getElementById('nickname-input');
+    const addBtn = document.getElementById('add-btn');
+    const userListEl = document.getElementById('user-list');
+
+    // 1. Avisa o servidor que somos um admin e pede a lista
+    socket.emit('admin_join');
+
+    // 2. Recebe a lista de usuários do servidor
+    socket.on('update_user_list', (users) => {
+        userListEl.innerHTML = ''; // Limpa a lista antiga
+        if (users.length === 0) {
+            userListEl.innerHTML = '<li class="user-list-item">Nenhum usuário cadastrado.</li>';
+        }
+
+        users.forEach(nickname => {
+            const li = document.createElement('li');
+            li.classList.add('user-list-item');
+
+            // --- Cria a estrutura HTML interna do <li> ---
+
+            // (A) O nome (visível por padrão)
+            const spanName = document.createElement('span');
+            spanName.classList.add('nickname-display');
+            spanName.textContent = nickname;
+
+            // (B) O formulário de edição (escondido por padrão)
+            const editForm = document.createElement('div');
+            editForm.classList.add('edit-form');
+            editForm.style.display = 'none';
+
+            const editInput = document.createElement('input');
+            editInput.type = 'text';
+            editInput.value = nickname;
+
+            const saveBtn = document.createElement('button');
+            saveBtn.textContent = 'Salvar';
+            saveBtn.classList.add('btn-save');
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = 'Cancelar';
+            cancelBtn.classList.add('btn-cancel');
+
+            editForm.appendChild(editInput);
+
+            // (C) Os botões de ação (visíveis por padrão)
+            const actionsDiv = document.createElement('div');
+            actionsDiv.classList.add('actions');
+
+            const editBtn = document.createElement('button');
+            editBtn.textContent = 'Editar';
+            editBtn.classList.add('btn-edit');
+
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = 'Remover';
+            removeBtn.classList.add('btn-remove');
+
+            actionsDiv.appendChild(editBtn);
+            actionsDiv.appendChild(removeBtn);
+            actionsDiv.appendChild(saveBtn); // Salvar e Cancelar ficam aqui
+            actionsDiv.appendChild(cancelBtn); // para facilitar o alinhamento
+            saveBtn.style.display = 'none';
+            cancelBtn.style.display = 'none';
+
+            // Monta o <li>
+            li.appendChild(spanName);
+            li.appendChild(editForm);
+            li.appendChild(actionsDiv);
+
+            userListEl.appendChild(li);
+
+            // --- Adiciona os Event Listeners ---
+
+            // CLIQUE EM "EDITAR"
+            editBtn.addEventListener('click', () => {
+                // Esconde o nome e os botões "Editar/Remover"
+                spanName.style.display = 'none';
+                editBtn.style.display = 'none';
+                removeBtn.style.display = 'none';
+
+                // Mostra o formulário de edição e os botões "Salvar/Cancelar"
+                editForm.style.display = 'block';
+                saveBtn.style.display = 'inline-block';
+                cancelBtn.style.display = 'inline-block';
+                editInput.focus();
+                editInput.select();
+            });
+
+            // CLIQUE EM "CANCELAR"
+            cancelBtn.addEventListener('click', () => {
+                // Mostra o nome e os botões "Editar/Remover"
+                spanName.style.display = 'block';
+                editBtn.style.display = 'inline-block';
+                removeBtn.style.display = 'inline-block';
+
+                // Esconde o formulário de edição e os botões "Salvar/Cancelar"
+                editForm.style.display = 'none';
+                saveBtn.style.display = 'none';
+                cancelBtn.style.display = 'none';
+
+                // Reseta o valor do input (caso o usuário tenha digitado algo)
+                editInput.value = nickname;
+            });
+
+            // CLIQUE EM "REMOVER"
+            removeBtn.addEventListener('click', () => {
+                if (confirm(`Tem certeza que deseja remover o usuário "${nickname}"?`)) {
+                    socket.emit('remove_user', { 'nickname': nickname });
+                }
+            });
+
+            // CLIQUE EM "SALVAR"
+            // ### AQUI ESTAVA O BUG: ()E> foi corrigido para () => ###
+            saveBtn.addEventListener('click', () => {
+                const newNickname = editInput.value.trim();
+                if (newNickname && newNickname !== nickname) {
+                    socket.emit('edit_user', {
+                        'old_nickname': nickname,
+                        'new_nickname': newNickname
+                    });
+                } else if (newNickname === nickname) {
+                    // Se não mudou, apenas cancela a edição
+                    cancelBtn.click();
+                } else {
+                    alert('O nome não pode ficar em branco.');
+                }
+            });
+
+            // Permite salvar com "Enter"
+            editInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    saveBtn.click();
+                }
+            });
+        });
+    });
+
+    // 4. Envia um novo usuário para ADICIONAR (Sem mudanças)
+    addBtn.addEventListener('click', () => {
+        const nickname = nicknameInput.value.trim();
+        if (nickname) {
+            socket.emit('add_user', { 'nickname': nickname });
+            nicknameInput.value = ''; // Limpa o campo
+        }
+    });
+    nicknameInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            addBtn.click();
+        }
+    });
+
+    // Recebe erros do servidor
+    socket.on('admin_error', (data) => {
+        alert('Erro: ' + data.message);
+    });
+
+</script>
+{% endblock %}

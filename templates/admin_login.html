@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+{% block title %}Login de Admin{% endblock %}
+{% block content %}
+<h1>Login de Administrador</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<p style="color: #dc3545;">{{ message }}</p>
+{% endfor %}
+{% endif %}
+{% endwith %}
+
+<form method="POST" action="{{ url_for('admin_login') }}">
+    <input type="password" name="password" placeholder="Sua senha" required
+        style="font-size: 18px; padding: 10px; border-radius: 5px; border: 1px solid #ccc;">
+    <br><br>
+    <button type="submit">Entrar</button>
+</form>
+{% endblock %}
+
+{% block scripts %}
+{% endblock %}

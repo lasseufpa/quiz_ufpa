@@ -1,0 +1,296 @@
+{% extends "layout.html" %}
+{% block title %}Entrar no Jogo{% endblock %}
+
+{% block content %}
+<div id="join-view" style="display: none;">
+    <h1>Entrar no Jogo</h1>
+    <input type="text" id="nickname-input" placeholder="Seu nome">
+    <br>
+    <select id="team-select">
+        <option value="">Selecione seu time</option>
+        <option value="TIME A">Time A</option>
+        <option value="TIME B">TIME B</option>
+    </select>
+    <br><br>
+    <button id="join-btn">Entrar</button>
+</div>
+
+<div id="wait-view" style="display: none;">
+    <h2>Olá, <span id="nickname-display"></span>!</h2>
+    <p>Aguarde o professor iniciar o jogo...</p>
+</div>
+
+<div id="question-view" style="display: none;">
+    <h3 id="question-text">Texto da Pergunta</h3>
+    <div id="options-grid" class="grid-options">
+    </div>
+</div>
+
+<div id="result-view" style="display: none;">
+    <h2 id="result-text">Aguardando próxima pergunta...</h2>
+    <p>Seu placar: <strong id="score-display">0</strong></p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const joinView = document.getElementById('join-view');
+    const waitView = document.getElementById('wait-view');
+    const questionView = document.getElementById('question-view');
+    const resultView = document.getElementById('result-view');
+
+    const nicknameInput = document.getElementById('nickname-input');
+    const nicknameDisplay = document.getElementById('nickname-display');
+    const teamSelect = document.getElementById('team-select');
+    const teamDisplay = document.getElementById('team-display');
+    const teamResultDisplay = document.getElementById('team-result-display');
+    const optionsGrid = document.getElementById('options-grid');
+    const questionTextEl = document.getElementById('question-text');
+    const resultTextEl = document.getElementById('result-text');
+    const scoreDisplayEl = document.getElementById('score-display');
+
+    const STATE_LOBBY = 0
+    const STATE_QUESTION = 1
+    const STATE_ANSWER = 2
+    const STATE_GAMEOVER = 3
+    
+    let myLastAnswerIndex = null;
+
+    let mySid = null;
+    let myTeam = null;
+    let sessionToken = localStorage.getItem('quizSessionToken');
+
+    // Verificar sessão existente ao carregar a página
+    window.addEventListener('load', () => {
+        if (sessionToken) {
+            checkExistingSession();
+        }
+    });
+
+    function checkExistingSession() {
+        fetch(`/check_session?token=${sessionToken}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.valid) {
+                    // Sessão válida, ocultar tela de login e aguardar reconexão
+                    joinView.style.display = 'none';
+                    waitView.style.display = 'block';
+                    nicknameDisplay.textContent = data.nickname;
+                    console.log('Sessão existente encontrada, aguardando reconexão...');
+                } else {
+                    // Sessão inválida, limpar token
+                    localStorage.removeItem('quizSessionToken');
+                    localStorage.removeItem('answerSubmitted');
+                    sessionToken = null;
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao verificar sessão:', error);
+                localStorage.removeItem('quizSessionToken');
+                sessionToken = null;
+            });
+    }
+
+    socket.on('connect', () => {
+        mySid = socket.id;
+        console.log('Conectado com SID:', mySid);
+        
+        // Se temos um token de sessão, tentar restaurar a sessão
+        if (sessionToken && mySid) {
+            restorePlayerSession();
+        } else {
+            joinView.style = 'block';
+        }
+    });
+
+    function restorePlayerSession() {
+        socket.emit('restore_session', { 
+            'token': sessionToken,
+            'new_sid': mySid 
+        });
+    }
+
+    function show_question(data){
+        console.log('gamestate = '+data.state)
+        waitView.style.display = 'none';
+        resultView.style.display = 'none';
+        questionView.style.display = 'block';
+
+        //questionTextEl.textContent = data.text;
+        questionTextEl.textContent = '';
+
+        optionsGrid.innerHTML = '';
+
+        const letters = ['A', 'B', 'C', 'D'];
+
+        data.options.forEach((option, index) => {
+            const btn = document.createElement('button');
+            btn.textContent = letters[index] || '?'; // mostra só A, B, C, D
+            btn.classList.add('option-btn');
+            btn.dataset.index = index;
+
+            btn.addEventListener('click', () => {
+                socket.emit('submit_answer', { 'option_index': index });
+                myLastAnswerIndex = index.toString();
+                localStorage.setItem("answerSubmitted", myLastAnswerIndex);
+
+                optionsGrid.querySelectorAll('button').forEach(b => b.disabled = true);
+                btn.style.backgroundColor = '#007bff';
+                btn.style.color = 'white';
+            });
+            optionsGrid.appendChild(btn);
+        });
+    }
+
+    function update_waiting_screen(myLastAnswerIndex, correctOptionIndex){
+        if (myLastAnswerIndex !== null) {
+            // Compara a resposta que salvamos (string) com a correta (string)
+            if (myLastAnswerIndex === correctOptionIndex) {
+                resultTextEl.textContent = 'Você Acertou!';
+            } else {
+                resultTextEl.textContent = 'Você Errou!';
+            }
+        } else {
+            resultTextEl.textContent = 'Você não respondeu a tempo!';
+        }
+    }
+
+
+    // Entrar no Jogo
+    const joinBtn = document.getElementById('join-btn'); // Pega o botão
+
+    joinBtn.addEventListener('click', () => {
+        const nickname = nicknameInput.value.trim(); // Usa .trim()
+        const team = teamSelect.value;
+        if (nickname && team) {
+            joinBtn.disabled = true; // Desabilita o botão
+            socket.emit('player_join', { 'nickname': nickname , 'team': team});
+            console.log("Jogador "+nickname+" entrou com o time "+team);
+            myTeam = team;
+        } else{
+            alert("Por favor adicione um nome e selecione um time!")
+        }
+        
+    }); 
+
+    // Servidor confirmou a entrada
+
+    socket.on('join_success', (data) => {
+        joinView.style.display = 'none';
+        waitView.style.display = 'block';
+        nicknameDisplay.textContent = data.nickname;
+        
+        // Salvar o token da sessão no localStorage
+        if (data.session_token) {
+            sessionToken = data.session_token;
+            localStorage.setItem('quizSessionToken', sessionToken);
+        }
+    });
+
+    // Servidor restaurou a sessão
+    socket.on('session_restored', (data) => {
+        console.log('Sessão restaurada com sucesso, gamestate = '+data.state);
+        joinView.style.display = 'none';
+        waitView.style.display = 'block';
+        nicknameDisplay.textContent = data.nickname;
+        myLastAnswerIndex = localStorage.getItem('answerSubmitted');
+        correctOptionIndex = localStorage.getItem('correctOptionIndex');
+        
+        // Atualizar estado atual do jogo
+        if (data.current_question >= 0) {
+            // Jogo já começou, mostrar estado atual
+            waitView.style.display = 'none';
+            resultView.style.display = 'block';
+            if (data.state == STATE_QUESTION){
+                if (myLastAnswerIndex === null){ 
+                    show_question(data);
+                }
+                else{ 
+                    resultTextEl.textContent = 'Resposta recebida! Aguardando resultados...';
+                }
+            }
+            if (data.state == STATE_ANSWER){
+                update_waiting_screen(myLastAnswerIndex, correctOptionIndex);
+            }
+        }
+        
+        // Atualizar placar se disponível
+        if (data.current_score !== undefined) {
+            scoreDisplayEl.textContent = data.current_score;
+        }
+    });
+
+    socket.on('session_restore_failed', (data) => {
+        console.log('Falha ao restaurar sessão:', data.reason);
+        localStorage.removeItem('quizSessionToken');
+        sessionToken = null;
+        joinView.style.display = 'block';
+        waitView.style.display = 'none';
+        joinBtn.disabled = false;
+    });
+
+    
+    // Servidor enviou uma pergunta
+    socket.on('show_question', (data) => {
+        console.log('inside socket.on');
+        show_question(data);
+        localStorage.removeItem('answerSubmitted');
+        myLastAnswerIndex = null;
+    });
+
+    // Servidor confirmou o recebimento da resposta
+    socket.on('answer_received', () => {
+        questionView.style.display = 'none';
+        resultView.style.display = 'block';
+        resultTextEl.textContent = 'Resposta recebida! Aguardando resultados...';
+        localStorage.setItem('answerReceived', true);
+    });
+
+
+    // Servidor enviou os resultados
+    socket.on('show_results', (data) => {
+        questionView.style.display = 'none';
+        resultView.style.display = 'block';
+
+        const myScore = data.scores[mySid] || 0;
+        scoreDisplayEl.textContent = myScore;
+
+        // Pega a resposta correta (como string)
+        const correctOptionIndex = data.correct_option.toString();
+        localStorage.setItem("correctOptionIndex", correctOptionIndex);
+
+        update_waiting_screen(myLastAnswerIndex,correctOptionIndex);
+
+        // Limpa a variável para a próxima pergunta
+        // myLastAnswerIndex = null;
+        // localStorage.removeItem("answerSubmitted");
+        // --- FIM DA LÓGICA CORRIGIDA ---
+    });
+
+    socket.on('game_over', (scores) => {
+        questionView.style.display = 'none';
+        resultView.style.display = 'block';
+        resultTextEl.textContent = 'O JOGO TERMINOU! Obrigado por jogar.';
+        // Encontrar o score correto para este jogador
+        const playerEntry = scores.find(player => player.nickname === nicknameDisplay.textContent);
+        if (playerEntry) {
+            scoreDisplayEl.textContent = playerEntry.score;
+        }
+    });
+        
+
+    socket.on('game_reset', () => {
+        alert("O anfitrião saiu. O jogo será reiniciado.");
+        localStorage.removeItem('quizSessionToken');
+        window.location.reload();
+    });
+
+    // ### Recebe a falha no login ###
+    socket.on('join_failed', (data) => {
+        alert('Falha ao entrar: ' + data.reason);
+        // Reabilita o botão para o usuário tentar de novo
+        document.getElementById('join-btn').disabled = false;
+    });
+
+</script>
+{% endblock %}
