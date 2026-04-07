@@ -58,7 +58,7 @@ Use a interface em ``http://localhost:5000/editor`` para gerenciar seus próprio
         "opção 3"
       ],
       "correct_option": 3,
-      "figure": ""nome_da_figura.png"" // ou "none, se não houver"
+      "figure": "nome_da_figura.png" // ou "none, se não houver"
     }
   ]
 }
