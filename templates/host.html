@@ -4,6 +4,9 @@
 {% block content %}
 <div id="lobby">
     <h1>{{ quiz_title }}</h1>
+    <select id="quiz-select">
+            <option value="">-- Selecionar Quiz --</option>
+    </select>
     <h2>Aguardando jogadores...</h2>
     <p>(Peça para os alunos acessarem: <strong>http://{{ host_ip }}:5000</strong>)</p>
 
@@ -17,6 +20,7 @@
 
 <div id="question-view" style="display: none;">
     <h3 class="question-text" id="question-text">Texto da Pergunta</h3>
+    <img id="question-chart" src="" alt="question-chart" style="max-width: 500px; display: block; margin: 0 auto;">
     <p>Respostas recebidas: <span id="answer-count">0</span> / <span id="total-players">0</span></p>
     <button id="show-results-btn">Mostrar Resultados</button>
     <button id="force-end-question-btn" style="display: none; background-color: #dc3545; margin-left: 10px;">Finalizar
@@ -64,9 +68,25 @@
     const scoreListEl = document.getElementById('score-list');
     const finalScoreListEl = document.getElementById('final-score-list');
 
+    const quizSelect = document.getElementById('quiz-select');
+    const chartImg = document.getElementById('question-chart');
+
     // Avisa o servidor que esta é a tela do host
     socket.emit('host_join');
 
+
+    async function loadQuizList() {
+        const res = await fetch('/api/quizzes');
+        const quizzes = await res.json();
+        quizSelect.innerHTML = '<option value="">-- Selecionar Quiz --</option>';
+        quizzes.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            quizSelect.appendChild(opt);
+        });
+    }
+    
     // Atualiza a lista de jogadores no lobby
     socket.on('update_player_list', (players) => {
         playerListEl.innerHTML = '';
@@ -95,15 +115,29 @@
     forceEndResultsBtn.addEventListener('click', forceEndQuiz);
 
     // Iniciar Jogo
-    startBtn.addEventListener('click', () => {
-        socket.emit('start_game');
-    });
+    startBtn.addEventListener('click', (e) => {
+    const selectedValue = quizSelect.value;
+
+    if (selectedValue === "") {
+        alert('Selecione um quiz válido!');
+    } else {
+        socket.emit('start_game', {'quiz-name' : quizSelect.value});
+    }
+});
 
     // Mostra a pergunta
     socket.on('show_question', (data) => {
         lobbyView.style.display = 'none';
         resultsView.style.display = 'none';
         questionView.style.display = 'block';
+
+        console.log(data.chart_path);
+        if (data.chart_path === "")
+            chartImg.style.display = 'none';
+        else{ 
+            chartImg.src = data.chart_path + '?t=' + new Date().getTime();
+            chartImg.style.display = 'block';
+        }
 
         questionTextEl.textContent = `(${data.question_index + 1}/${data.total_questions}) ${data.text}`;
 
@@ -114,7 +148,7 @@
             optionsContainer = document.createElement('div');
             optionsContainer.id = optionsContainerId;
             optionsContainer.classList.add('grid-options');
-            questionTextEl.insertAdjacentElement('afterend', optionsContainer);
+            chartImg.insertAdjacentElement('afterend', optionsContainer);
         }
 
         optionsContainer.innerHTML = '';
@@ -124,6 +158,7 @@
             btn.textContent = `${String.fromCharCode(65 + i)}) ${opt}`;
             optionsContainer.appendChild(btn);
         });
+
     });
 
 
@@ -156,10 +191,10 @@
     });
 
     // Fim de jogo
-    // Fim de jogo
     socket.on('game_over', (leaderboard) => { // Recebe o placar ordenado (decrescente)
         resultsView.style.display = 'none';
         gameOverView.style.display = 'block';
+        
         forceEndBtn.style.display = 'none'; // Esconde o botão no lobby
 
         finalScoreListEl.innerHTML = '';
@@ -218,53 +253,7 @@
         window.location.reload();
     });
 
-    // Importa Chart.js (local, sem internet)
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/chart.js'; // Se quiser offline, posso te mandar o arquivo local também
-    document.head.appendChild(script);
-
-    let answersChart = null;
-
-    socket.on('show_results', (data) => {
-        questionView.style.display = 'none';
-        resultsView.style.display = 'block';
-        correctTextEl.textContent = data.correct_option_text;
-
-        const labels = data.players ? ['A', 'B', 'C', 'D'].slice(0, data.answer_distribution.length) : [];
-        const values = data.answer_distribution;
-
-        const ctx = document.getElementById('answersChart').getContext('2d');
-
-        if (answersChart) {
-            answersChart.destroy();
-        }
-
-        answersChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Número de respostas',
-                    data: values,
-                    backgroundColor: ['#007bff', '#28a745', '#ffc107', '#dc3545'].slice(0, values.length)
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { display: false },
-                    title: {
-                        display: true,
-                        text: 'Distribuição das respostas'
-                    }
-                },
-                scales: {
-                    y: { beginAtZero: true, precision: 0 }
-                }
-            }
-        });
-    });
-
+    loadQuizList();
 
 </script>
 {% endblock %}

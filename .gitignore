@@ -1,4 +1,4 @@
 *.csv
-static/graphs/*.png
-*.secret
-*.json
+static/*/*.png
+static/*/*.json
+.private

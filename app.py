@@ -13,6 +13,12 @@ import matplotlib.pyplot as plt
 import socket
 import getpass
 
+import hashlib
+import time
+
+from werkzeug.utils import secure_filename
+from flask import send_from_directory
+
 
 PLAYER_SESSIONS = {}  # {session_token: {'sid': sid, 'nickname': nickname}}
 
@@ -21,10 +27,21 @@ STATE_QUESTION 	= 1
 STATE_ANSWER 	= 2
 STATE_GAMEOVER 	= 3
 
+
 from pathlib import Path
 import hashlib
 
-secretpath = Path(__file__).parent / ".secret"
+# Configuration
+QUIZZES_FOLDER =    'static/quizzes'          # stores quizname.json files
+UPLOAD_FOLDER =     'static/quiz-figures'           # stores quiz figures
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+# Create folders if they don't exist
+os.makedirs(QUIZZES_FOLDER, exist_ok=True)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+
+secretpath = Path(__file__).parent /".private" /".secret"
 
 def promptPassword(name):
     string = getpass.getpass(f'Create {name} password: ')
@@ -86,8 +103,9 @@ def export_scores_to_csv(scores, players):
 
 
 # --- Nosso "Banco de Dados" de Perguntas ---
-def load_quiz_data(filename='quiz.json'):
+def load_quiz_data(file):
     """Carrega as perguntas de um arquivo JSON."""
+    filename = Path(__file__).parent / 'static'/ 'quizzes' / (file + '.json')
     try:
         with open(filename, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -110,11 +128,11 @@ def load_quiz_data(filename='quiz.json'):
         exit(1) # Sai do programa
 
 # --- Nosso "Banco de Dados" de Perguntas (Agora carregado do arquivo) ---
-QUIZ_DATA = load_quiz_data()
+QUIZ_DATA = None
 
 
 # ### INÍCIO BLOCO MODIFICADO: Gerenciamento de Usuários ###
-USERS_FILE = 'users.json'
+USERS_FILE = '.private/users.json'
 
 def load_users(filename=USERS_FILE):
     """Carrega a lista de usuários do JSON. Retorna um DICIONÁRIO {lower: canonical}."""
@@ -174,7 +192,7 @@ def player_join():
 def host_view():
     local_ip = get_local_ip()
     return render_template('host.html', 
-                           quiz_title=QUIZ_DATA['title'], 
+                           quiz_title="Quiz UFPA", 
                            host_ip=local_ip)
 
 @app.route('/check_session')
@@ -425,9 +443,12 @@ def on_player_join(data):
 
 
 @socketio.on('start_game')
-def on_start_game():
+def on_start_game(data):
     if request.sid != game_state['host_sid']:
         return
+    quiz = data.get('quiz-name')
+    global QUIZ_DATA
+    QUIZ_DATA = load_quiz_data(quiz)
     print("Iniciando o jogo!")
     advance_question()
 
@@ -457,11 +478,16 @@ def advance_question():
         game_state['state'] = STATE_GAMEOVER
     else:
         question_data = QUIZ_DATA['questions'][q_index]
+        figure = question_data['figure']
+        chart_path = ""
+        if figure != "none":
+            chart_path = f"{UPLOAD_FOLDER}/{figure}"
         payload = {
             'text': question_data['text'],
             'options': question_data['options'],
             'question_index': q_index,
-            'total_questions': len(QUIZ_DATA['questions'])
+            'total_questions': len(QUIZ_DATA['questions']),
+            'chart_path': chart_path
         }
         emit('show_question', payload, broadcast=True)
         if game_state['host_sid']:
@@ -552,6 +578,99 @@ def on_force_end_quiz():
     game_state['state'] = STATE_GAMEOVER
     game_state['current_question'] = -1
     game_state['answers'] = {}
+
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def get_quiz_list():
+    """Returns list of quiz names (without .json extension)"""
+    quizzes = []
+    for f in os.listdir(QUIZZES_FOLDER):
+        if f.endswith('.json'):
+            quizzes.append(f[:-5])
+    return quizzes
+
+def load_quiz(quiz_name):
+    """Loads a quiz dict from quizzes/quiz_name.json"""
+    path = os.path.join(QUIZZES_FOLDER, f'{quiz_name}.json')
+    if not os.path.exists(path):
+        return None
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def save_quiz(quiz_name, data):
+    """Saves quiz dict to quizzes/quiz_name.json"""
+    path = os.path.join(QUIZZES_FOLDER, f'{quiz_name}.json')
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+# -------------------- Routes --------------------
+@app.route('/editor')
+def editor_view():
+    """Página de gerenciamento de quizzes."""
+    return render_template('editor.html')
+
+
+@app.route('/api/quizzes', methods=['GET'])
+def api_list_quizzes():
+    """Return list of available quiz names"""
+    return jsonify(get_quiz_list())
+
+@app.route('/api/quiz/<quiz_name>', methods=['GET'])
+def api_get_quiz(quiz_name):
+    """Return a single quiz JSON"""
+    quiz = load_quiz(quiz_name)
+    if quiz is None:
+        return jsonify({'error': 'Quiz not found'}), 404
+    return jsonify(quiz)
+
+@app.route('/api/quiz/<quiz_name>', methods=['POST'])
+def api_save_quiz(quiz_name):
+    """Create or update a quiz. Expects JSON body with title and questions."""
+    data = request.get_json()
+    if not data or 'title' not in data or 'questions' not in data:
+        return jsonify({'error': 'Invalid quiz data'}), 400
+    
+    # Optional: validate structure
+    save_quiz(quiz_name, data)
+    return jsonify({'message': 'Quiz saved successfully'})
+
+@app.route('/api/quiz/<quiz_name>', methods=['DELETE'])
+def api_delete_quiz(quiz_name):
+    """Delete a quiz file"""
+    path = os.path.join(QUIZZES_FOLDER, f'{quiz_name}.json')
+    if not os.path.exists(path):
+        return jsonify({'error': 'Quiz not found'}), 404
+    os.remove(path)
+    return jsonify({'message': 'Quiz deleted'})
+
+@app.route('/api/upload_image', methods=['POST'])
+def api_upload_image():
+    """Upload an image, return hashed filename (timestamp + original extension)"""
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image part'}), 400
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'File type not allowed'}), 400
+
+    # Generate unique filename: time_hash + extension
+    ext = file.filename.rsplit('.', 1)[1].lower()
+    unique_name = hashlib.md5(f"{time.time()}{file.filename}".encode()).hexdigest()
+    filename = f"{unique_name}.{ext}"
+    file.save(os.path.join(UPLOAD_FOLDER, filename))
+    
+    # Return the path that can be stored in the quiz JSON
+    return jsonify({'filename': filename, 'url': f'{UPLOAD_FOLDER}/{filename}'})
+
+# Optional: serve uploaded images (if not already served by static folder)
+@app.route('/static/quiz-figures/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
+
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
