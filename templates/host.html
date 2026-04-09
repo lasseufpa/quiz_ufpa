@@ -2,7 +2,7 @@
 {% block title %}(Host) {{ quiz_title }}{% endblock %}
 
 {% block content %}
-<div id="lobby">
+<div id="lobby" style="display: none;">
     <h1>{{ quiz_title }}</h1>
     <select id="quiz-select">
             <option value="">-- Selecionar Quiz --</option>
@@ -89,6 +89,7 @@
     
     // Atualiza a lista de jogadores no lobby
     socket.on('update_player_list', (players) => {
+        lobbyView.style.display='none'
         playerListEl.innerHTML = '';
         players.forEach(name => {
             const li = document.createElement('li');
@@ -176,12 +177,13 @@
     // Mostra os resultados da pergunta
     socket.on('show_results', (data) => {
         questionView.style.display = 'none';
-        resultsView.style.display = 'block';
+        
         correctTextEl.textContent = data.correct_option_text;
 
         // Atualiza a imagem do gráfico gerado pelo Python
         const chartImg = document.getElementById('results-chart');
         chartImg.src = data.chart_path + '?t=' + new Date().getTime(); // força atualização
+        resultsView.style.display = 'block';
     });
 
 
@@ -194,7 +196,7 @@
     socket.on('game_over', (leaderboard) => { // Recebe o placar ordenado (decrescente)
         resultsView.style.display = 'none';
         gameOverView.style.display = 'block';
-        
+        lobbyView.style.display = 'none';
         forceEndBtn.style.display = 'none'; // Esconde o botão no lobby
 
         finalScoreListEl.innerHTML = '';
@@ -252,6 +254,113 @@
         alert("O Jogo foi resetado!");
         window.location.reload();
     });
+
+    // Add this to your existing socket.on handlers section
+
+// Handle resume_host_state to restore the host screen
+socket.on('resume_host_state', (data) => {
+    console.log('Restoring host state:', data);
+    
+    const gameState = data.state;
+    const currentQuestion = data.current_question;
+    const totalPlayers = data.total_players;
+    const answeredCount = data.answered_count;
+    
+    // First, hide all views
+    lobbyView.style.display = 'none';
+    questionView.style.display = 'none';
+    resultsView.style.display = 'none';
+    gameOverView.style.display = 'none';
+    
+    // Restore based on game state
+    switch(gameState) {
+        case 'lobby':
+            lobbyView.style.display = 'block';
+            // Force end button visibility based on players
+            if (forceEndBtn && totalPlayers > 0) {
+                forceEndBtn.style.display = 'block';
+            }
+            break;
+            
+        case 'question':
+        case 'QUESTION':
+            questionView.style.display = 'block';
+            // Update answer counts
+            if (answerCountEl && totalPlayersEl) {
+                answerCountEl.textContent = answeredCount;
+                totalPlayersEl.textContent = totalPlayers;
+            }
+            // The show_question event will be sent separately by the server
+            // So we don't need to request it again
+            break;
+            
+        case 'answer':
+        case 'ANSWER':
+            resultsView.style.display = 'block';
+            // The show_results event will be sent separately by the server
+            break;
+            
+        case 'game_over':
+        case 'GAME_OVER':
+            gameOverView.style.display = 'block';
+            break;
+            
+        default:
+            console.warn('Unknown game state:', gameState);
+            lobbyView.style.display = 'block';
+            break;
+    }
+    
+    // Show force end button in appropriate views if there are players
+    if (forceEndBtn && totalPlayers > 0 && gameState !== 'game_over') {
+        forceEndBtn.style.display = 'block';
+    }
+    if (forceEndQuestionBtn && questionView.style.display === 'block') {
+        forceEndQuestionBtn.style.display = 'block';
+    }
+    if (forceEndResultsBtn && resultsView.style.display === 'block') {
+        forceEndResultsBtn.style.display = 'block';
+    }
+});
+
+// Handle host_reconnected message (optional but nice)
+socket.on('host_reconnected', (data) => {
+    // Show a temporary notification that host is back
+    lobbyView.style.display='none';
+    const notification = document.createElement('div');
+    notification.textContent = data.message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background-color: #4CAF50;
+        color: white;
+        padding: 15px;
+        border-radius: 5px;
+        z-index: 1000;
+        animation: fadeOut 3s forwards;
+    `;
+    document.body.appendChild(notification);
+    
+    // Add fade out animation
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            70% { opacity: 1; }
+            100% { opacity: 0; display: none; }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // Remove notification after animation
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 3000);
+});
+
 
     loadQuizList();
 

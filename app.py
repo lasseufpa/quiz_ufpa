@@ -167,17 +167,18 @@ REGISTERED_USERS = load_users() # ### MUDANÇA ### Agora é um dict
 print(f"--- {len(REGISTERED_USERS)} usuários carregados de '{USERS_FILE}' ---")
 # ### FIM BLOCO MODIFICADO ###
 
-
-# --- Estado do Jogo (Sem mudanças) ---
-game_state = {
-    'host_sid': None,
-    'players': {}, # Dicionário de {sid: 'nickname'}
-    'current_question': -1, # -1 = Lobby, 0 = Pergunta 1, etc.
-    'answers': {}, # Dicionário de {sid: option_index}
-    'scores': {}, # Dicionário de {sid: score}
-    'state': {0}    # lobby = 0, pergunta = 1, resposta = 2, gameover = 3 
-}
-
+def clear_game_state():
+    # --- Estado do Jogo (Sem mudanças) ---
+    game_state = {
+        'host_sid': None,
+        'players': {}, # Dicionário de {sid: 'nickname'}
+        'current_question': -1, # -1 = Lobby, 0 = Pergunta 1, etc.
+        'answers': {}, # Dicionário de {sid: option_index}
+        'scores': {}, # Dicionário de {sid: score}
+        'state': {0}    # lobby = 0, pergunta = 1, resposta = 2, gameover = 3 
+    }
+    return game_state
+game_state = clear_game_state()
 # --- Rotas HTTP (Modificadas para incluir Admin) ---
 
 def generate_session_token():
@@ -223,6 +224,7 @@ def on_restore_session(data):
         nickname = session_data['nickname']
         
         # Verifica se o jogador ainda está no jogo
+        print('verificando reconexão')
         if old_sid in game_state['players']:
             # Atualiza o SID para o novo
             game_state['players'][new_sid] = game_state['players'].pop(old_sid)
@@ -297,21 +299,106 @@ def on_disconnect():
     print(f"Cliente desconectado: {request.sid}")
     
     if request.sid == game_state['host_sid']:
-        print("!!! O ANFITRIÃO DESCONECTOU. RESETANDO O JOGO. !!!")
-        game_state.update(host_sid=None, players={}, current_question=-1, answers={}, scores={})
-        PLAYER_SESSIONS.clear()  # Limpa todas as sessões
-        emit('game_reset', broadcast=True)
+        print("!!! O ANFITRIÃO DESCONECTOU. Salvando estado e pausando o jogo. !!!")
+        # Save current state before clearing host
+        save_full_state()
+        game_state['host_sid'] = None
+        # Tell all players that host is gone but game is paused
+        emit('host_disconnected', {
+            'message': 'O apresentador desconectou. Aguarde a reconexão para retomar o jogo.'
+        }, broadcast=True)
+
     elif request.sid in game_state['players']:
         nickname = game_state['players'].get(request.sid, '??')
+        # # Remove player from game
+        # del game_state['players'][request.sid]
+        # game_state['scores'].pop(request.sid, None)
+        # game_state['answers'].pop(request.sid, None)
+        # # Also remove from PLAYER_SESSIONS (find and delete)
+        # tokens_to_remove = [tok for tok, data in PLAYER_SESSIONS.items() if data['sid'] == request.sid]
+        # for tok in tokens_to_remove:
+        #     del PLAYER_SESSIONS[tok]
+        # # Save state after player leaves
         if game_state['host_sid']:
             emit('player_left', {'nickname': nickname}, to=game_state['host_sid'])
+            
         print(f"Jogador {nickname} saiu.")
+
 
 @socketio.on('host_join')
 def on_host_join():
-    game_state['host_sid'] = request.sid
-    print(f"Anfitrião se juntou: {request.sid}")
-    emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
+    # If there is already a host, ignore
+    if game_state['host_sid'] is not None:
+        emit('admin_error', {'message': 'Já existe um anfitrião conectado.'}, to=request.sid)
+        return
+    
+    # Check if there is an existing game in progress (players present)
+    if game_state['players']:
+        # Resume existing game
+        game_state['host_sid'] = request.sid
+        print(f"Anfitrião reconectou e retomou o jogo: {request.sid}")
+        
+        # Notify host of current state
+        emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
+        # Tell host the current question index and game state
+        emit('resume_host_state', {
+            'current_question': game_state['current_question'],
+            'state': game_state['state'],
+            'total_players': len(game_state['players']),
+            'answered_count': len(game_state['answers'])
+        }, to=game_state['host_sid'])
+        
+        # Broadcast to all players that host is back
+        emit('host_reconnected', {'message': 'O apresentador reconectou. O jogo vai continuar.'}, broadcast=True)
+        
+        # If game was in QUESTION state, resend the current question to all players
+        if game_state['state'] == STATE_QUESTION and game_state['current_question'] >= 0 and QUIZ_DATA:
+            q_index = game_state['current_question']
+            question_data = QUIZ_DATA['questions'][q_index]
+            figure = question_data['figure']
+            chart_path = ""
+            if figure != "none":
+                chart_path = f"{UPLOAD_FOLDER}/{figure}"
+            payload = {
+                'text': question_data['text'],
+                'options': question_data['options'],
+                'question_index': q_index,
+                'total_questions': len(QUIZ_DATA['questions']),
+                'chart_path': chart_path
+            }
+            emit('show_question', payload, broadcast=True)
+        # If game was in ANSWER state, resend results (optional, but simple to do)
+        elif game_state['state'] == STATE_ANSWER and game_state['current_question'] >= 0 and QUIZ_DATA:
+            # Re‑compute and send results (or retrieve saved chart)
+            q_index = game_state['current_question']
+            question_data = QUIZ_DATA['questions'][q_index]
+            correct_option_index = question_data['correct_option']
+            correct_option_text = question_data['options'][correct_option_index]
+            answer_distribution = [0] * len(question_data['options'])
+            for ans in game_state['answers'].values():
+                try:
+                    answer_distribution[int(ans)] += 1
+                except:
+                    pass
+            # If chart was already saved, reuse; otherwise generate new
+            chart_path = f"static/graphs/q{q_index + 1}_results.png"
+            if not os.path.exists(chart_path):
+                chart_path = save_answer_distribution_chart(answer_distribution, question_data, q_index)
+            payload = {
+                'correct_option': correct_option_index,
+                'correct_option_text': chr(ord('A')+correct_option_index) + ') ' + correct_option_text,
+                'scores': game_state['scores'],
+                'players': game_state['players'],
+                'answer_distribution': answer_distribution,
+                'chart_path': chart_path
+            }
+            emit('show_results', payload, broadcast=True)
+            emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
+    else:
+        # No game in progress – fresh host join
+        game_state['host_sid'] = request.sid
+        print(f"Novo anfitrião se juntou: {request.sid}")
+        emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
 
 # ### INÍCIO EVENTOS ADMIN (Modificados) ###
 @socketio.on('admin_join')
@@ -390,7 +477,7 @@ def on_edit_user(data):
     print(f"Admin editou usuário: de '{old_nickname}' para '{new_nickname}'")
     # ### MUDANÇA ### Envia os valores (nomes originais)
     emit('update_user_list', sorted(list(REGISTERED_USERS.values())), broadcast=True)
-# ### FIM EVENTOS ADMIN ###
+
 
 
 # ### MODIFICADO: on_player_join ###
@@ -441,6 +528,7 @@ def on_player_join(data):
             'session_token': session_token
         },
         to=request.sid)
+    save_full_state()
 
 
 @socketio.on('start_game')
@@ -450,6 +538,7 @@ def on_start_game(data):
     quiz = data.get('quiz-name')
     global QUIZ_DATA
     QUIZ_DATA = load_quiz_data(quiz)
+    save_full_state()
     print("Iniciando o jogo!")
     advance_question()
 
@@ -460,6 +549,7 @@ def on_next_question():
     advance_question()
 
 def advance_question():
+    global game_state
     game_state['answers'] = {} 
     game_state['current_question'] += 1
     game_state['state'] = STATE_QUESTION
@@ -476,7 +566,9 @@ def advance_question():
         leaderboard.sort(key=lambda x: x['score'], reverse=True)
         export_scores_to_csv(game_state['scores'], game_state['players'])
         emit('game_over', leaderboard, broadcast=True)
+        game_state = clear_game_state()
         game_state['state'] = STATE_GAMEOVER
+        os.remove(GAME_SAVE_FILE)
     else:
         question_data = QUIZ_DATA['questions'][q_index]
         figure = question_data['figure']
@@ -496,6 +588,7 @@ def advance_question():
                 'answered': 0, 
                 'total': len(game_state['players'])
             }, to=game_state['host_sid'])
+        save_full_state()
 
 @socketio.on('submit_answer')
 def on_submit_answer(data):
@@ -510,6 +603,7 @@ def on_submit_answer(data):
             'answered': len(game_state['answers']), 
             'total': len(game_state['players'])
         }, to=game_state['host_sid'])
+    save_full_state()
 
 def save_answer_distribution_chart(answer_distribution, question_data, question_index):
     os.makedirs('static/graphs', exist_ok=True)
@@ -561,6 +655,7 @@ def on_show_results():
     emit('show_results', payload, broadcast=True)
     print("Mostrando resultados.")
     game_state['state'] = STATE_ANSWER
+    save_full_state()
 
 @socketio.on('force_end_quiz')
 def on_force_end_quiz():
@@ -576,9 +671,10 @@ def on_force_end_quiz():
     leaderboard.sort(key=lambda x: x['score'], reverse=True)
     export_scores_to_csv(game_state['scores'], game_state['players'])
     emit('game_over', leaderboard, broadcast=True)
+    game_state = clear_game_state()
     game_state['state'] = STATE_GAMEOVER
-    game_state['current_question'] = -1
-    game_state['answers'] = {}
+    
+    os.remove(GAME_SAVE_FILE)
 
 
 def allowed_file(filename):
@@ -671,6 +767,84 @@ def api_upload_image():
 def uploaded_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
+# ========== ADDITIONS FOR PERSISTENT STATE & HOST RECONNECTION ==========
+GAME_SAVE_FILE = '.private/game_save.json'
+
+def save_full_state():
+    """Save current game state and player sessions to a JSON file."""
+    state = {
+        'game_state': {
+            'host_sid': game_state['host_sid'],
+            'players': game_state['players'],
+            'current_question': game_state['current_question'],
+            'answers': game_state['answers'],
+            'scores': game_state['scores'],
+            'state': game_state['state']
+        },
+        'player_sessions': PLAYER_SESSIONS,
+        'quiz_data': QUIZ_DATA  # current quiz being played
+    }
+    print(state)
+    try:
+        with open(GAME_SAVE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+        print("✅ Game state saved to file.")
+    except Exception as e:
+        print(f"❌ Failed to save game state: {e}")
+
+def load_full_state():
+    """Load saved state from file, returns None if file doesn't exist."""
+    if not os.path.exists(GAME_SAVE_FILE):
+        return None
+    try:
+        with open(GAME_SAVE_FILE, 'r', encoding='utf-8') as f:
+            state = json.load(f)
+        print("✅ Game state loaded from file.")
+        return state
+    except Exception as e:
+        print(f"❌ Failed to load game state: {e}")
+        return None
+
+def restore_full_state():
+    """Restore game_state, PLAYER_SESSIONS, and QUIZ_DATA from saved file."""
+    state = load_full_state()
+    if state:
+        game_state.update(state['game_state'])
+        global PLAYER_SESSIONS, QUIZ_DATA
+        PLAYER_SESSIONS = state['player_sessions']
+        QUIZ_DATA = state['quiz_data']
+        print("--- Game state restored from backup ---")
+        return True
+    return False
+
+# On server startup, try to restore previous state
+if restore_full_state():
+    print("Server resumed with saved game state.")
+else:
+    print("No saved game state found. Starting fresh.")
+
+# Optional: Add a socket event for host to manually clear saved state
+@socketio.on('clear_saved_game')
+def on_clear_saved_game():
+    if request.sid != game_state['host_sid']:
+        return
+    if os.path.exists(GAME_SAVE_FILE):
+        os.remove(GAME_SAVE_FILE)
+        print("Saved game file deleted by host.")
+    # Also reset in‑memory state if desired
+    game_state.update({
+        'host_sid': None,
+        'players': {},
+        'current_question': -1,
+        'answers': {},
+        'scores': {},
+        'state': STATE_LOBBY
+    })
+    global PLAYER_SESSIONS, QUIZ_DATA
+    PLAYER_SESSIONS = {}
+    QUIZ_DATA = None
+    emit('game_reset', broadcast=True)
+    emit('admin_error', {'message': 'Jogo foi resetado completamente.'}, to=request.sid)
 
 
 def get_local_ip():
