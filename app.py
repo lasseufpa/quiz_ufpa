@@ -175,7 +175,7 @@ def clear_game_state():
         'current_question': -1, # -1 = Lobby, 0 = Pergunta 1, etc.
         'answers': {}, # Dicionário de {sid: option_index}
         'scores': {}, # Dicionário de {sid: score}
-        'state': {0}    # lobby = 0, pergunta = 1, resposta = 2, gameover = 3 
+        'state': 0    # lobby = 0, pergunta = 1, resposta = 2, gameover = 3 
     }
     return game_state
 game_state = clear_game_state()
@@ -568,7 +568,9 @@ def advance_question():
         emit('game_over', leaderboard, broadcast=True)
         game_state = clear_game_state()
         game_state['state'] = STATE_GAMEOVER
-        os.remove(GAME_SAVE_FILE)
+        if os.path.exists(GAME_SAVE_FILE):
+            os.remove(GAME_SAVE_FILE)
+            print("Saved game file deleted by host.")
     else:
         question_data = QUIZ_DATA['questions'][q_index]
         figure = question_data['figure']
@@ -673,8 +675,9 @@ def on_force_end_quiz():
     emit('game_over', leaderboard, broadcast=True)
     game_state = clear_game_state()
     game_state['state'] = STATE_GAMEOVER
-    
-    os.remove(GAME_SAVE_FILE)
+    if os.path.exists(GAME_SAVE_FILE):
+        os.remove(GAME_SAVE_FILE)
+        print("Saved game file deleted by host.")
 
 
 def allowed_file(filename):

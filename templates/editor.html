@@ -203,7 +203,7 @@
             // Preview existing figure
             const previewDiv = qDiv.querySelector(`#fig-preview-${idx}`);
             if (q.figure && q.figure !== "none") {
-                previewDiv.innerHTML = `<img src="/static/uploads/${q.figure}" class="figure-preview"><br><small>${q.figure}</small>`;
+                previewDiv.innerHTML = `<img src="/static/quiz-figures/${q.figure}" class="figure-preview"><br><small>${q.figure}</small>`;
             } else {
                 previewDiv.innerHTML = '<small>Nenhuma figura</small>';
             }

@@ -89,7 +89,7 @@
     
     // Atualiza a lista de jogadores no lobby
     socket.on('update_player_list', (players) => {
-        lobbyView.style.display='none'
+        lobbyView.style.display='block'
         playerListEl.innerHTML = '';
         players.forEach(name => {
             const li = document.createElement('li');
@@ -326,7 +326,6 @@ socket.on('resume_host_state', (data) => {
 // Handle host_reconnected message (optional but nice)
 socket.on('host_reconnected', (data) => {
     // Show a temporary notification that host is back
-    lobbyView.style.display='none';
     const notification = document.createElement('div');
     notification.textContent = data.message;
     notification.style.cssText = `

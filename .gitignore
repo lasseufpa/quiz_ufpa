@@ -1,4 +1,7 @@
 *.csv
 static/*/*.png
+static/*/*.jpeg
+static/*/*.jpg
+static/*/*.gif
 static/*/*.json
 .private
