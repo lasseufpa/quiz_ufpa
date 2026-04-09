@@ -34,12 +34,13 @@ import hashlib
 # Configuration
 QUIZZES_FOLDER =    'static/quizzes'          # stores quizname.json files
 UPLOAD_FOLDER =     'static/quiz-figures'           # stores quiz figures
+SECRET_FOLDER =     '.private'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
 # Create folders if they don't exist
 os.makedirs(QUIZZES_FOLDER, exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
+os.makedirs(SECRET_FOLDER, exist_ok=True)
 
 secretpath = Path(__file__).parent /".private" /".secret"
 
