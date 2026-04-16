@@ -6,7 +6,7 @@
     <h1>Entrar no Jogo</h1>
     <input type="text" id="nickname-input" placeholder="Seu nome">
     <br>
-    <select id="team-select">
+    <select id="team-select" style="display: none;">
         <option value="">Selecione seu time</option>
         <option value="TIME A">Time A</option>
         <option value="TIME B">TIME B</option>
@@ -28,7 +28,7 @@
 
 <div id="result-view" style="display: none;">
     <h2 id="result-text">Aguardando próxima pergunta...</h2>
-    <p>Seu placar: <strong id="score-display">0</strong></p>
+    <p>Sua pontuação: <strong id="score-display">0</strong></p>
 </div>
 {% endblock %}
 
@@ -55,6 +55,7 @@
     const STATE_GAMEOVER = 3
     
     let myLastAnswerIndex = null;
+    let lastAnsweredQuestionIndex = null; // stores the index of the question answered
 
     let mySid = null;
     let myTeam = null;
@@ -132,7 +133,9 @@
             btn.addEventListener('click', () => {
                 socket.emit('submit_answer', { 'option_index': index });
                 myLastAnswerIndex = index.toString();
+                lastAnsweredQuestionIndex = data.question_index; // ← store question index
                 localStorage.setItem("answerSubmitted", myLastAnswerIndex);
+                localStorage.setItem("lastAnsweredQuestionIndex", lastAnsweredQuestionIndex);
 
                 optionsGrid.querySelectorAll('button').forEach(b => b.disabled = true);
                 btn.style.backgroundColor = '#007bff';
@@ -161,7 +164,7 @@
 
     joinBtn.addEventListener('click', () => {
         const nickname = nicknameInput.value.trim(); // Usa .trim()
-        const team = teamSelect.value;
+        const team = 'time A';
         if (nickname && team) {
             joinBtn.disabled = true; // Desabilita o botão
             socket.emit('player_join', { 'nickname': nickname , 'team': team});
@@ -188,37 +191,48 @@
     });
 
     // Servidor restaurou a sessão
-    socket.on('session_restored', (data) => {
-        console.log('Sessão restaurada com sucesso, gamestate = '+data.state);
-        joinView.style.display = 'none';
-        waitView.style.display = 'block';
-        nicknameDisplay.textContent = data.nickname;
-        myLastAnswerIndex = localStorage.getItem('answerSubmitted');
-        correctOptionIndex = localStorage.getItem('correctOptionIndex');
+socket.on('session_restored', (data) => {
+    console.log('Sessão restaurada com sucesso, gamestate = '+data.state);
+    joinView.style.display = 'none';
+    waitView.style.display = 'block';
+    nicknameDisplay.textContent = data.nickname;
+    
+    // Retrieve stored data
+    const storedAnswer = localStorage.getItem('answerSubmitted');
+    const storedQuestionIdx = localStorage.getItem('lastAnsweredQuestionIndex');
+    myLastAnswerIndex = storedAnswer;
+    correctOptionIndex = localStorage.getItem('correctOptionIndex');
+    
+    // Update current score if available
+    if (data.current_score !== undefined) {
+        scoreDisplayEl.textContent = data.current_score;
+    }
+    
+    if (data.current_question >= 0) {
+        // Game already started
+        waitView.style.display = 'none';
+        resultView.style.display = 'block';
         
-        // Atualizar estado atual do jogo
-        if (data.current_question >= 0) {
-            // Jogo já começou, mostrar estado atual
-            waitView.style.display = 'none';
-            resultView.style.display = 'block';
-            if (data.state == STATE_QUESTION){
-                if (myLastAnswerIndex === null){ 
-                    show_question(data);
-                }
-                else{ 
-                    resultTextEl.textContent = 'Resposta recebida! Aguardando resultados...';
-                }
-            }
-            if (data.state == STATE_ANSWER){
-                update_waiting_screen(myLastAnswerIndex, correctOptionIndex);
+        if (data.state == STATE_QUESTION) {
+            // Check if the stored answer belongs to the CURRENT question
+            if (storedAnswer !== null && storedQuestionIdx !== null && 
+                parseInt(storedQuestionIdx) === data.current_question) {
+                // Already answered this exact question → show waiting screen
+                resultTextEl.textContent = 'Resposta recebida! Aguardando resultados...';
+            } else {
+                // No answer for the current question → clear stale data and show question
+                myLastAnswerIndex = null;
+                lastAnsweredQuestionIndex = null;
+                localStorage.removeItem('answerSubmitted');
+                localStorage.removeItem('lastAnsweredQuestionIndex');
+                show_question(data);
             }
         }
-        
-        // Atualizar placar se disponível
-        if (data.current_score !== undefined) {
-            scoreDisplayEl.textContent = data.current_score;
+        if (data.state == STATE_ANSWER) {
+            update_waiting_screen(myLastAnswerIndex, correctOptionIndex);
         }
-    });
+    }
+});
 
     socket.on('session_restore_failed', (data) => {
         console.log('Falha ao restaurar sessão:', data.reason);

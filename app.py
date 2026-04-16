@@ -247,7 +247,7 @@ def on_restore_session(data):
             }, to=new_sid)
             
             # Atualiza o host
-            if game_state['host_sid']:
+            if game_state['host_sid'] and game_state['state']==STATE_LOBBY:
                 emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
             
             print(f"Sessão restaurada para {nickname}. Novo SID: {new_sid}")
