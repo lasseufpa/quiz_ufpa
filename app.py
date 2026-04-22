@@ -770,6 +770,111 @@ def api_upload_image():
 def uploaded_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
+from flask import send_file
+import zipfile
+from io import BytesIO
+
+@app.route('/api/quiz/export', methods=['POST'])
+def api_export_quiz():
+    """Recebe os dados do quiz, empacota JSON + imagens em um .quiz e envia para download."""
+    data = request.get_json()
+    if not data or 'title' not in data or 'questions' not in data:
+        return jsonify({'error': 'Dados do quiz inválidos'}), 400
+
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        # 1. Adiciona o quiz.json
+        quiz_json_str = json.dumps(data, indent=2, ensure_ascii=False)
+        zip_file.writestr('quiz.json', quiz_json_str)
+
+        # 2. Adiciona as figuras (se existirem)
+        for idx, q in enumerate(data['questions']):
+            fig = q.get('figure')
+            if fig and fig != 'none':
+                fig_path = os.path.join(UPLOAD_FOLDER, fig)
+                if os.path.exists(fig_path):
+                    zip_file.write(fig_path, arcname=f'figures/{fig}')
+                else:
+                    print(f'Aviso: figura "{fig}" não encontrada para a pergunta {idx}')
+
+    zip_buffer.seek(0)
+    # Gera um nome seguro para o arquivo .quiz
+    safe_title = data['title'].replace('/', '_').replace('\\', '_')
+    return send_file(zip_buffer, as_attachment=True,
+                     download_name=f'{safe_title}.quiz',
+                     mimetype='application/zip')
+
+
+@app.route('/api/quiz/import', methods=['POST'])
+def api_import_quiz():
+    """Recebe um arquivo .quiz, extrai JSON e imagens, salva no servidor e retorna os dados."""
+    if 'file' not in request.files:
+        return jsonify({'error': 'Nenhum arquivo enviado'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'Arquivo vazio'}), 400
+    if not file.filename.endswith('.quiz'):
+        return jsonify({'error': 'O arquivo deve ter extensão .quiz'}), 400
+
+    try:
+        zip_data = file.read()
+        with zipfile.ZipFile(BytesIO(zip_data), 'r') as zip_file:
+            # Verifica se quiz.json existe
+            if 'quiz.json' not in zip_file.namelist():
+                return jsonify({'error': 'Arquivo .quiz inválido: não contém quiz.json'}), 400
+
+            # Lê o JSON
+            quiz_json_str = zip_file.read('quiz.json').decode('utf-8')
+            quiz_data = json.loads(quiz_json_str)
+
+            if 'title' not in quiz_data or 'questions' not in quiz_data:
+                return jsonify({'error': 'quiz.json mal formatado (faltando title ou questions)'}), 400
+
+            # Mapeia todas as figuras dentro da pasta 'figures/'
+            figure_files = {}
+            for name in zip_file.namelist():
+                if name.startswith('figures/') and not name.endswith('/'):
+                    orig_filename = os.path.basename(name)
+                    figure_files[orig_filename] = zip_file.read(name)
+
+            # Atualiza referências das figuras e salva as imagens com nomes únicos
+            for q in quiz_data['questions']:
+                fig = q.get('figure')
+                if fig and fig != 'none' and fig in figure_files:
+                    ext = fig.rsplit('.', 1)[1].lower() if '.' in fig else 'png'
+                    novo_nome = hashlib.md5(f"{time.time()}{fig}".encode()).hexdigest()
+                    novo_nome = f"{novo_nome}.{ext}"
+                    caminho_imagem = os.path.join(UPLOAD_FOLDER, novo_nome)
+                    with open(caminho_imagem, 'wb') as img_f:
+                        img_f.write(figure_files[fig])
+                    q['figure'] = novo_nome
+                elif fig and fig != 'none':
+                    # Figura referenciada mas não presente no pacote
+                    q['figure'] = 'none'
+
+            # Define um nome único para o arquivo do quiz (evita sobrescrita)
+            base_name = quiz_data['title'].replace('/', '_').replace('\\', '_')
+            quiz_name = base_name
+            contador = 1
+            while os.path.exists(os.path.join(QUIZZES_FOLDER, f'{quiz_name}.json')):
+                quiz_name = f"{base_name}_{contador}"
+                contador += 1
+
+            # Salva o quiz
+            save_quiz(quiz_name, quiz_data)
+
+            return jsonify({
+                'success': True,
+                'quiz_name': quiz_name,
+                'quiz_data': quiz_data
+            })
+
+    except zipfile.BadZipFile:
+        return jsonify({'error': 'Arquivo .quiz corrompido (não é um ZIP válido)'}), 400
+    except Exception as e:
+        return jsonify({'error': f'Erro ao processar o arquivo: {str(e)}'}), 500
+
 # ========== ADDITIONS FOR PERSISTENT STATE & HOST RECONNECTION ==========
 GAME_SAVE_FILE = '.private/game_save.json'
 

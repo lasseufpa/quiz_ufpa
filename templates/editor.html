@@ -99,6 +99,9 @@
 
         <button id="add-question-btn" class="btn-primary">+ Adicionar Pergunta</button>
         <button id="save-quiz-btn" style="background: #28a745; color: white; border: none; padding: 10px 20px; margin-left: 10px;">Salvar Quiz</button>
+        <button id="export-quiz-btn" style="background: #17a2b8; color: white; border: none; padding: 10px 20px; margin-left: 10px;">📤 Exportar Quiz</button>
+        <button id="import-quiz-btn" style="background: #6c757d; color: white; border: none; padding: 10px 20px; margin-left: 10px;">📂 Importar Quiz</button>
+        <input type="file" id="import-file-input" accept=".quiz" style="display: none;">
     </div>
 </div>
 {% endblock %}
@@ -382,6 +385,90 @@
             loadQuiz(selected);
         }
     });
+
+    // -------------------- Exportar Quiz --------------------
+    async function exportQuiz() {
+        // Sincroniza o título com o campo de input
+        quizData.title = quizTitleInput.value.trim();
+        if (!quizData.title) {
+            alert("O quiz precisa ter um título antes de ser exportado.");
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/quiz/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(quizData)
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Erro na exportação');
+            }
+
+            // Obtém o blob e dispara o download
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            // Nome do arquivo: título do quiz (sanitizado) + .quiz
+            let safeTitle = quizData.title.replace(/[^a-zA-Z0-9_\-]/g, '_');
+            a.download = `${safeTitle}.quiz`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            alert(`Falha ao exportar: ${err.message}`);
+        }
+    }
+
+    // -------------------- Importar Quiz --------------------
+    function importQuiz() {
+        const fileInput = document.getElementById('import-file-input');
+        fileInput.value = ''; // permite reimportar o mesmo arquivo
+        fileInput.click();
+    }
+
+    document.getElementById('import-file-input').addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('/api/quiz/import', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Erro na importação');
+            }
+
+            // Substitui o quiz atual pelos dados importados
+            currentQuizName = data.quiz_name;
+            quizData = data.quiz_data;
+            quizTitleInput.value = quizData.title;
+            renderQuestions();
+
+            // Atualiza a lista de quizzes no dropdown
+            await loadQuizList();
+            // Seleciona o quiz recém-importado
+            quizSelect.value = currentQuizName;
+
+            alert(`Quiz "${quizData.title}" importado com sucesso!`);
+        } catch (err) {
+            alert(`Erro ao importar: ${err.message}`);
+        }
+    });
+
+    // Adiciona os event listeners dos novos botões
+    document.getElementById('export-quiz-btn').addEventListener('click', exportQuiz);
+    document.getElementById('import-quiz-btn').addEventListener('click', importQuiz);
     newQuizBtn.addEventListener('click', newQuiz);
     deleteQuizBtn.addEventListener('click', deleteQuiz);
     addQuestionBtn.addEventListener('click', addQuestion);
