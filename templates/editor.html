@@ -160,26 +160,22 @@
 
             // Header with remove button
             qDiv.innerHTML = `
-                <div class="question-header">
-                    <strong>Pergunta ${idx+1}</strong>
-                    <button class="remove-question-btn" data-idx="${idx}" style="background:#dc3545;color:white;">Remover</button>
-                </div>
-                <label>Texto da pergunta:</label>
-                <input type="text" class="question-text" value="${escapeHtml(q.text)}" style="width:100%; margin-bottom:10px;">
-                
-                <label>Opções (uma por linha):</label>
-                <ul class="options-list" id="options-list-${idx}"></ul>
-                
-                <label>Índice da opção correta (0 a ${q.options.length-1}):</label>
-                <input type="number" class="correct-option" value="${q.correct_option}" min="0" max="${q.options.length-1}" style="width:80px;">
-                
-                <label>Figura (opcional):</label>
-                <div>
-                    <input type="file" class="figure-upload" accept="image/*" data-qidx="${idx}">
-                    <button class="clear-figure-btn" data-qidx="${idx}" style="background:#6c757d;color:white;">Remover figura</button>
-                </div>
-                <div class="figure-preview-container" id="fig-preview-${idx}"></div>
-            `;
+            <div class="question-header">
+                <strong>Pergunta ${idx+1}</strong>
+                <button class="remove-question-btn" data-idx="${idx}" style="background:#dc3545;color:white;">Remover</button>
+            </div>
+            <label>Texto da pergunta:</label>
+            <textarea class="question-text" style="width:100%; margin-bottom:10px;" rows="3">${escapeHtml(q.text)}</textarea>
+            
+            <label>Opções (selecione a correta):</label>
+            <ul class="options-list" id="options-list-${idx}"></ul>
+            
+            <label>Figura (opcional):</label>
+            <div>
+                <input type="file" class="figure-upload" accept="image/*" data-qidx="${idx}">
+                <button class="clear-figure-btn" data-qidx="${idx}" style="background:#6c757d;color:white;">Remover figura</button>
+            </div>
+            <div class="figure-preview-container" id="fig-preview-${idx}"></div>`;
             questionsContainer.appendChild(qDiv);
 
             // Render options list
@@ -187,10 +183,18 @@
             q.options.forEach((opt, optIdx) => {
                 const li = document.createElement('li');
                 li.innerHTML = `
-                    <input type="text" class="option-text" value="${escapeHtml(opt)}" style="flex:1;">
+                    <input type="radio" name="correct_option_${idx}" value="${optIdx}" ${q.correct_option === optIdx ? 'checked' : ''}>
+                    <textarea class="option-text" style="flex:1; resize:vertical;" rows="1">${escapeHtml(opt)}</textarea>
                     <button class="remove-option-btn" data-optidx="${optIdx}" style="background:#dc3545;color:white;">X</button>
                 `;
                 optionsList.appendChild(li);
+
+                const radio = li.querySelector('input[type="radio"]');
+                radio.addEventListener('change', () => {
+                    if (radio.checked) {
+                        quizData.questions[qIdx].correct_option = parseInt(radio.value);
+                    }
+                });
             });
             // Add new option button
             const addOptBtn = document.createElement('button');
@@ -224,18 +228,6 @@
         const textInput = qDiv.querySelector('.question-text');
         textInput.addEventListener('input', (e) => {
             quizData.questions[qIdx].text = e.target.value;
-        });
-
-        // Update correct option index
-        const correctInput = qDiv.querySelector('.correct-option');
-        correctInput.addEventListener('change', (e) => {
-            let val = parseInt(e.target.value);
-            if (isNaN(val)) val = 0;
-            const max = quizData.questions[qIdx].options.length - 1;
-            if (val > max) val = max;
-            if (val < 0) val = 0;
-            quizData.questions[qIdx].correct_option = val;
-            e.target.value = val;
         });
 
         // Handle option changes (delegation)
