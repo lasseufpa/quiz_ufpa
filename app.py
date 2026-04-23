@@ -85,21 +85,61 @@ socketio = SocketIO(
     max_http_buffer_size=1e7  # 10MB
 )
 
+
+def clear_game_state():
+    # --- Estado do Jogo (Sem mudanças) ---
+    game_state = {
+        'host_sid': None,
+        'players': {}, # Dicionário de {sid: 'nickname'}
+        'current_question': -1, # -1 = Lobby, 0 = Pergunta 1, etc.
+        'answers': {}, # Dicionário de {sid: option_index}
+        'scores': {}, # Dicionário de {sid: score}
+        'state': 0    # lobby = 0, pergunta = 1, resposta = 2, gameover = 3 
+    }
+    return game_state
+game_state = clear_game_state()
+
 def export_scores_to_csv(scores, players):
-    """Exporta os resultados do quiz para um arquivo CSV local."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"scores/scores_{timestamp}.csv"
-    filepath = os.path.join(os.path.dirname(__file__), filename)
+    """Exporta os resultados do quiz para um arquivo CSV local.
+       O nome do arquivo inclui: data + título do quiz.
+       Se já existir, adiciona um índice (_2, _3, ...).
+    """
+    # 1. Get quiz title (sanitized for filesystem)
+    quiz_title = "unknown_quiz"
+    if QUIZ_DATA and 'title' in QUIZ_DATA:
+        raw_title = QUIZ_DATA['title']
+        # Replace unsafe characters: spaces, slashes, backslashes, etc.
+        safe_title = "".join(c if c.isalnum() or c in '.-_' else '_' for c in raw_title)
+        quiz_title = safe_title.strip('_')
+        if not quiz_title:
+            quiz_title = "unknown_quiz"
+
+    # 2. Create timestamp (YYYYMMDD)
+    date_str = datetime.now().strftime("%Y%m%d")
+    base_filename = f"scores_{quiz_title}_{date_str}.csv"
+    filepath = os.path.join(os.path.dirname(__file__), "scores", base_filename)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    
-    
+
+    # 3. If file exists, find next available index
+    if os.path.exists(filepath):
+        index = 2
+        while True:
+            name, ext = os.path.splitext(base_filename)
+            new_name = f"{name}_{index}{ext}"
+            new_path = os.path.join(os.path.dirname(filepath), new_name)
+            if not os.path.exists(new_path):
+                filepath = new_path
+                break
+            index += 1
+
+    # 4. Write CSV
     with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(['Jogador', 'Pontuação'])
         for sid, score in scores.items():
             writer.writerow([players.get(sid, 'Desconhecido'), score])
 
-    print(f"✅ Resultados exportados para {filename}")
+    print(f"✅ Resultados exportados para {filepath}")
 
 
 
@@ -167,18 +207,7 @@ REGISTERED_USERS = load_users() # ### MUDANÇA ### Agora é um dict
 print(f"--- {len(REGISTERED_USERS)} usuários carregados de '{USERS_FILE}' ---")
 # ### FIM BLOCO MODIFICADO ###
 
-def clear_game_state():
-    # --- Estado do Jogo (Sem mudanças) ---
-    game_state = {
-        'host_sid': None,
-        'players': {}, # Dicionário de {sid: 'nickname'}
-        'current_question': -1, # -1 = Lobby, 0 = Pergunta 1, etc.
-        'answers': {}, # Dicionário de {sid: option_index}
-        'scores': {}, # Dicionário de {sid: score}
-        'state': 0    # lobby = 0, pergunta = 1, resposta = 2, gameover = 3 
-    }
-    return game_state
-game_state = clear_game_state()
+
 # --- Rotas HTTP (Modificadas para incluir Admin) ---
 
 def generate_session_token():
@@ -190,8 +219,11 @@ def generate_session_token():
 def player_join():
     return render_template('player.html')
 
+# Modify the host route to require admin login
 @app.route('/host')
 def host_view():
+    if not session.get('host_logged_in'):
+        return redirect(url_for('host_login'))
     local_ip = get_local_ip()
     return render_template('host.html', 
                            quiz_title="Quiz UFPA", 
@@ -256,6 +288,24 @@ def on_restore_session(data):
     # Se não encontrou sessão válida
     emit('session_restore_failed', {'reason': 'Sessão não encontrada ou expirada'}, to=new_sid)
 
+@app.route('/host/login', methods=['GET', 'POST'])
+def host_login():
+    """Página de login do anfitrião."""
+    if request.method == 'POST':
+        password = request.form.get('password')
+        encoded_string = password.encode('utf-8')
+        hash_object = hashlib.sha256(encoded_string)
+        password = hash_object.hexdigest().strip()
+
+        if password == ADMIN_PASSWORD:
+            session['host_logged_in'] = True
+            print("Login de anfitrião bem-sucedido.")
+            return redirect(url_for('host_view'))
+        else:
+            flash('Senha incorreta!', 'error')
+            print("Tentativa de login de anfitrião falhou.")
+    return render_template('host_login.html')
+
 # ### INÍCIO BLOCO NOVAS ROTAS ADMIN
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
@@ -269,7 +319,7 @@ def admin_login():
         if password == ADMIN_PASSWORD:
             session['admin_logged_in'] = True
             print("Login de admin bem-sucedido.")
-            return redirect(url_for('admin_view'))
+            return redirect(url_for('admin_view'))  # CHANGED: go to admin page
         else:
             flash('Senha incorreta!', 'error')
             print("Tentativa de login de admin falhou.")
@@ -325,9 +375,14 @@ def on_disconnect():
         print(f"Jogador {nickname} saiu.")
 
 
+# Modify on_host_join socket event to check admin authentication
 @socketio.on('host_join')
 def on_host_join():
-    # If there is already a host, ignore
+    # Require host authentication (separate from admin)
+    if not session.get('host_logged_in'):
+        emit('admin_error', {'message': 'Você precisa estar logado como anfitrião para controlar o jogo.'}, to=request.sid)
+        return    # If there is already a host, ignore
+    
     if game_state['host_sid'] is not None:
         emit('admin_error', {'message': 'Já existe um anfitrião conectado.'}, to=request.sid)
         return
@@ -367,9 +422,8 @@ def on_host_join():
                 'chart_path': chart_path
             }
             emit('show_question', payload, broadcast=True)
-        # If game was in ANSWER state, resend results (optional, but simple to do)
+        # If game was in ANSWER state, resend results
         elif game_state['state'] == STATE_ANSWER and game_state['current_question'] >= 0 and QUIZ_DATA:
-            # Re‑compute and send results (or retrieve saved chart)
             q_index = game_state['current_question']
             question_data = QUIZ_DATA['questions'][q_index]
             correct_option_index = question_data['correct_option']
@@ -380,7 +434,6 @@ def on_host_join():
                     answer_distribution[int(ans)] += 1
                 except:
                     pass
-            # If chart was already saved, reuse; otherwise generate new
             chart_path = f"static/graphs/q{q_index + 1}_results.png"
             if not os.path.exists(chart_path):
                 chart_path = save_answer_distribution_chart(answer_distribution, question_data, q_index)
@@ -399,7 +452,6 @@ def on_host_join():
         game_state['host_sid'] = request.sid
         print(f"Novo anfitrião se juntou: {request.sid}")
         emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
-
 # ### INÍCIO EVENTOS ADMIN (Modificados) ###
 @socketio.on('admin_join')
 def on_admin_join():
@@ -661,6 +713,7 @@ def on_show_results():
 
 @socketio.on('force_end_quiz')
 def on_force_end_quiz():
+    global game_state
     if request.sid != game_state['host_sid']:
         return 
     print("Quiz finalizado forçadamente pelo host")
@@ -673,6 +726,7 @@ def on_force_end_quiz():
     leaderboard.sort(key=lambda x: x['score'], reverse=True)
     export_scores_to_csv(game_state['scores'], game_state['players'])
     emit('game_over', leaderboard, broadcast=True)
+    
     game_state = clear_game_state()
     game_state['state'] = STATE_GAMEOVER
     if os.path.exists(GAME_SAVE_FILE):
@@ -892,7 +946,6 @@ def save_full_state():
         'player_sessions': PLAYER_SESSIONS,
         'quiz_data': QUIZ_DATA  # current quiz being played
     }
-    print(state)
     try:
         with open(GAME_SAVE_FILE, 'w', encoding='utf-8') as f:
             json.dump(state, f, indent=2, ensure_ascii=False)
