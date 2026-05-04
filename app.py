@@ -19,6 +19,7 @@ import time
 from werkzeug.utils import secure_filename
 from flask import send_from_directory
 
+import matplotlib.patches as patches  
 
 PLAYER_SESSIONS = {}  # {session_token: {'sid': sid, 'nickname': nickname}}
 
@@ -87,40 +88,38 @@ socketio = SocketIO(
 
 
 def clear_game_state():
-    # --- Estado do Jogo (Sem mudanças) ---
     game_state = {
         'host_sid': None,
-        'players': {}, # Dicionário de {sid: 'nickname'}
-        'current_question': -1, # -1 = Lobby, 0 = Pergunta 1, etc.
-        'answers': {}, # Dicionário de {sid: option_index}
-        'scores': {}, # Dicionário de {sid: score}
-        'state': 0    # lobby = 0, pergunta = 1, resposta = 2, gameover = 3 
+        'players': {},
+        'current_question': -1,
+        'answers': {},
+        'scores': {},
+        'competition_scores': {},      # NEW
+        'state': 0,
+        'question_start_time': None,   # NEW
+        'answers_time': {}             # NEW
     }
     return game_state
 game_state = clear_game_state()
 
-def export_scores_to_csv(scores, players):
-    """Exporta os resultados do quiz para um arquivo CSV local.
-       O nome do arquivo inclui: data + título do quiz.
-       Se já existir, adiciona um índice (_2, _3, ...).
+def export_scores_to_csv(scores, competition_scores, players):
     """
-    # 1. Get quiz title (sanitized for filesystem)
+        Exporta os resultados do quiz para um arquivo CSV local.
+        Inclui colunas: Jogador, Pontuação (Avaliação), Pontuação (Competição).
+    """
     quiz_title = "unknown_quiz"
     if QUIZ_DATA and 'title' in QUIZ_DATA:
         raw_title = QUIZ_DATA['title']
-        # Replace unsafe characters: spaces, slashes, backslashes, etc.
         safe_title = "".join(c if c.isalnum() or c in '.-_' else '_' for c in raw_title)
         quiz_title = safe_title.strip('_')
         if not quiz_title:
             quiz_title = "unknown_quiz"
 
-    # 2. Create timestamp (YYYYMMDD)
     date_str = datetime.now().strftime("%Y%m%d")
     base_filename = f"scores_{quiz_title}_{date_str}.csv"
     filepath = os.path.join(os.path.dirname(__file__), "scores", base_filename)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
-    # 3. If file exists, find next available index
     if os.path.exists(filepath):
         index = 2
         while True:
@@ -132,12 +131,13 @@ def export_scores_to_csv(scores, players):
                 break
             index += 1
 
-    # 4. Write CSV
     with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(['Jogador', 'Pontuação'])
-        for sid, score in scores.items():
-            writer.writerow([players.get(sid, 'Desconhecido'), score])
+        writer.writerow(['Jogador', 'Pontuação (Avaliação)', 'Pontuação (Competição)'])
+        for sid, player_name in players.items():
+            eval_score = scores.get(sid, 0)
+            comp_score = competition_scores.get(sid, 0)
+            writer.writerow([player_name, eval_score, comp_score])
 
     print(f"✅ Resultados exportados para {filepath}")
 
@@ -261,10 +261,15 @@ def on_restore_session(data):
             # Atualiza o SID para o novo
             game_state['players'][new_sid] = game_state['players'].pop(old_sid)
             game_state['scores'][new_sid] = game_state['scores'].pop(old_sid, 0)
+            game_state['competition_scores'][new_sid] = game_state['competition_scores'].pop(old_sid, 0)
             
             # Se tinha uma resposta, transfere também
             if old_sid in game_state['answers']:
                 game_state['answers'][new_sid] = game_state['answers'].pop(old_sid)
+            
+            # se tinha tempo, transfere também
+            if old_sid in game_state['answers_time']:
+                game_state['answers_time'][new_sid] = game_state['answers_time'].pop(old_sid)
             
             # Atualiza o token com o novo SID
             PLAYER_SESSIONS[token]['sid'] = new_sid
@@ -602,7 +607,8 @@ def on_next_question():
 
 def advance_question():
     global game_state
-    game_state['answers'] = {} 
+    game_state['answers'] = {}
+    game_state['answers_time'] = {}          # reset for new question
     game_state['current_question'] += 1
     game_state['state'] = STATE_QUESTION
     q_index = game_state['current_question']
@@ -613,10 +619,10 @@ def advance_question():
         for sid, nickname in game_state['players'].items():
             leaderboard.append({
                 'nickname': nickname,
-                'score': game_state['scores'].get(sid, 0)
+                'score': game_state['competition_scores'].get(sid, 0)
             })
         leaderboard.sort(key=lambda x: x['score'], reverse=True)
-        export_scores_to_csv(game_state['scores'], game_state['players'])
+        export_scores_to_csv(game_state['scores'], game_state['competition_scores'], game_state['players'])
         emit('game_over', leaderboard, broadcast=True)
         game_state = clear_game_state()
         game_state['state'] = STATE_GAMEOVER
@@ -636,6 +642,7 @@ def advance_question():
             'total_questions': len(QUIZ_DATA['questions']),
             'chart_path': chart_path
         }
+        game_state['question_start_time'] = time.time()
         emit('show_question', payload, broadcast=True)
         if game_state['host_sid']:
             emit('update_answer_count', {
@@ -647,10 +654,22 @@ def advance_question():
 @socketio.on('submit_answer')
 def on_submit_answer(data):
     if request.sid not in game_state['players']:
-        return 
+        return
+    if request.sid in game_state['answers']:
+        emit('answer_received', to=request.sid)
+        return
+    
     option_index = data.get('option_index')
     game_state['answers'][request.sid] = option_index
-    print(f"Jogador {game_state['players'][request.sid]} respondeu: {option_index}")
+    
+    # Compute response time
+    if game_state['question_start_time'] is not None:
+        elapsed = time.time() - game_state['question_start_time']
+        game_state['answers_time'][request.sid] = elapsed
+    else:
+        game_state['answers_time'][request.sid] = None
+    
+    print(f"Jogador {game_state['players'][request.sid]} respondeu: {option_index} em {game_state['answers_time'][request.sid]}s")
     emit('answer_received', to=request.sid)
     if game_state['host_sid']:
         emit('update_answer_count', {
@@ -674,6 +693,94 @@ def save_answer_distribution_chart(answer_distribution, question_data, question_
     plt.close()
     return filename
 
+# @socketio.on('show_results')
+# def on_show_results():
+#     if request.sid != game_state['host_sid']:
+#         return
+#     q_index = game_state['current_question']
+#     if q_index < 0 or q_index >= len(QUIZ_DATA['questions']):
+#         return
+#     question_data = QUIZ_DATA['questions'][q_index]
+#     correct_option_index = question_data['correct_option']
+#     correct_option_text = question_data['options'][correct_option_index] 
+#     answer_distribution = [0] * len(question_data['options'])
+#     for ans in game_state['answers'].values():
+#         try:
+#             answer_distribution[int(ans)] += 1
+#         except (ValueError, TypeError, IndexError):
+#             pass
+
+#     for sid, answer in game_state['answers'].items():
+#         try:
+#             if int(answer) == int(correct_option_index):
+#                 game_state['scores'][sid] = game_state['scores'].get(sid, 0) + 10
+#         except:
+#             pass
+#     chart_path = save_answer_distribution_chart(answer_distribution, question_data,q_index)
+#     payload = {
+#     'correct_option': correct_option_index,
+#     'correct_option_text': chr(ord('A')+correct_option_index) + ') ' + correct_option_text,
+#     'scores': game_state['scores'],
+#     'players': game_state['players'],
+#     'answer_distribution': answer_distribution,
+#     'chart_path': chart_path
+#     }
+#     emit('show_results', payload, broadcast=True)
+#     print("Mostrando resultados.")
+#     game_state['state'] = STATE_ANSWER
+#     save_full_state()
+
+def save_combined_results_chart(answer_distribution, question_data, question_index, top3):
+    """Generate a single figure with two subplots:
+       - Left: answer distribution bar chart
+       - Right: podium (top 3 competition points)
+       Returns the file path to the saved image.
+    """
+    os.makedirs('static/graphs', exist_ok=True)
+    filename = f"static/graphs/q{question_index + 1}_results.png"
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 3))
+    
+    # ---- Subplot 1: Answer distribution bar chart ----
+    labels = ['A', 'B', 'C', 'D'][:len(answer_distribution)]
+    values = answer_distribution
+    colors = ['#007bff', '#28a745', '#ffc107', '#dc3545'][:len(values)]
+    ax1.bar(labels, values, color=colors)
+    ax1.set_title(f"Distribuição das respostas\nPergunta {question_index + 1}")
+    ax1.set_xlabel("Alternativas")
+    ax1.set_ylabel("Número de respostas")
+    
+    # ---- Subplot 2: Podium ----
+    ax2.set_xlim(0, 3)
+    ax2.set_ylim(0, 1)
+    ax2.axis('off')
+    
+    cores_podium = ['#FFD966', '#C0C0C0', '#CD7F32']
+    largura = 0.9
+    altura = 0.7
+    y_base = 0.15
+    
+    for i, (nome, pontuacao) in enumerate(top3):
+        # Handle spaces in names: replace with newline
+        nome_display = nome.replace(' ', '\n')
+        x = i + 0.05
+        rect = patches.Rectangle(
+            (x, y_base), largura, altura,
+            linewidth=1, edgecolor='black', facecolor=cores_podium[i], alpha=0.8
+        )
+        ax2.add_patch(rect)
+        ax2.text(
+            x + largura/2, y_base + altura/2,
+            f"{nome_display}\n{pontuacao}",
+            ha='center', va='center', fontsize=15, fontweight='bold'
+        )
+    ax2.set_title("Pódio")
+    
+    plt.tight_layout()
+    plt.savefig(filename)
+    plt.close()
+    return filename
+
 @socketio.on('show_results')
 def on_show_results():
     if request.sid != game_state['host_sid']:
@@ -683,7 +790,7 @@ def on_show_results():
         return
     question_data = QUIZ_DATA['questions'][q_index]
     correct_option_index = question_data['correct_option']
-    correct_option_text = question_data['options'][correct_option_index] 
+    correct_option_text = question_data['options'][correct_option_index]
     answer_distribution = [0] * len(question_data['options'])
     for ans in game_state['answers'].values():
         try:
@@ -691,23 +798,46 @@ def on_show_results():
         except (ValueError, TypeError, IndexError):
             pass
 
+    # Evaluation scoring: +10 per correct answer
     for sid, answer in game_state['answers'].items():
         try:
             if int(answer) == int(correct_option_index):
-                game_state['scores'][sid] = game_state['scores'].get(sid, 0) + 10
+                game_state['scores'][sid] = game_state['scores'].get(sid, 0) + 1
         except:
             pass
-    chart_path = save_answer_distribution_chart(answer_distribution, question_data,q_index)
+
+    # Competition scoring: round(200 * 2^(-t/5)) for correct answers
+    question_competition_points = {}
+    for sid, answer in game_state['answers'].items():
+        try:
+            if int(answer) == int(correct_option_index):
+                t = game_state['answers_time'].get(sid)
+                if t is not None and t >= 0:
+                    comp_points = round(500 * (2 ** (-t / 5.0)))
+                else:
+                    comp_points = 0
+                game_state['competition_scores'][sid] = game_state['competition_scores'].get(sid, 0) + comp_points
+                question_competition_points[game_state['players'][sid]] = comp_points
+        except:
+            pass
+
+    # Get top 3 for podium
+    top3 = sorted(question_competition_points.items(), key=lambda x: x[1], reverse=True)[:3]
+
+    # Generate combined chart (bar chart + podium)
+    combined_chart_path = save_combined_results_chart(answer_distribution, question_data, q_index, top3)
+
     payload = {
-    'correct_option': correct_option_index,
-    'correct_option_text': chr(ord('A')+correct_option_index) + ') ' + correct_option_text,
-    'scores': game_state['scores'],
-    'players': game_state['players'],
-    'answer_distribution': answer_distribution,
-    'chart_path': chart_path
+        'correct_option': correct_option_index,
+        'correct_option_text': chr(ord('A')+correct_option_index) + ') ' + correct_option_text,
+        'scores': game_state['scores'],
+        'players': game_state['players'],
+        'answer_distribution': answer_distribution,
+        'chart_path': combined_chart_path,   # Now points to the combined image
+        # No separate 'podium_path' needed
     }
     emit('show_results', payload, broadcast=True)
-    print("Mostrando resultados.")
+    print("Mostrando resultados com gráfico combinado.")
     game_state['state'] = STATE_ANSWER
     save_full_state()
 
@@ -721,10 +851,10 @@ def on_force_end_quiz():
     for sid, nickname in game_state['players'].items():
         leaderboard.append({
             'nickname': nickname,
-            'score': game_state['scores'].get(sid, 0)
+            'score': game_state['competition_scores'].get(sid, 0)
         })
     leaderboard.sort(key=lambda x: x['score'], reverse=True)
-    export_scores_to_csv(game_state['scores'], game_state['players'])
+    export_scores_to_csv(game_state['scores'], game_state['competition_scores'], game_state['players'])
     emit('game_over', leaderboard, broadcast=True)
     
     game_state = clear_game_state()
@@ -941,7 +1071,10 @@ def save_full_state():
             'current_question': game_state['current_question'],
             'answers': game_state['answers'],
             'scores': game_state['scores'],
-            'state': game_state['state']
+            'competition_scores': game_state['competition_scores'],   # NEW
+            'state': game_state['state'],
+            'question_start_time': game_state['question_start_time'], # NEW
+            'answers_time': game_state['answers_time']               # NEW
         },
         'player_sessions': PLAYER_SESSIONS,
         'quiz_data': QUIZ_DATA  # current quiz being played
@@ -971,6 +1104,12 @@ def restore_full_state():
     state = load_full_state()
     if state:
         game_state.update(state['game_state'])
+        if 'competition_scores' not in game_state:
+            game_state['competition_scores'] = {}
+        if 'question_start_time' not in game_state:
+            game_state['question_start_time'] = None
+        if 'answers_time' not in game_state:
+            game_state['answers_time'] = {}
         global PLAYER_SESSIONS, QUIZ_DATA
         PLAYER_SESSIONS = state['player_sessions']
         QUIZ_DATA = state['quiz_data']
@@ -999,7 +1138,10 @@ def on_clear_saved_game():
         'current_question': -1,
         'answers': {},
         'scores': {},
-        'state': STATE_LOBBY
+        'state': STATE_LOBBY,
+        'competition_scores': {},
+        'question_start_time': None,
+        'answers_time': {}
     })
     global PLAYER_SESSIONS, QUIZ_DATA
     PLAYER_SESSIONS = {}
