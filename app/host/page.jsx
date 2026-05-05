@@ -8,6 +8,7 @@ import { renderLatexToHtml } from '@/lib/renderLatex';
 export default function HostPage() {
   const router = useRouter();
   const [socket, setSocket] = useState(null);
+  const [serverHost, setServerHost] = useState('');
   const [players, setPlayers] = useState([]);
   const [quizzes, setQuizzes] = useState([]);
   const [selectedQuiz, setSelectedQuiz] = useState('');
@@ -19,6 +20,12 @@ export default function HostPage() {
 
   useEffect(() => {
     setSocket(getSocket());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setServerHost(window.location.hostname);
+    }
   }, []);
 
   useEffect(() => {
@@ -143,7 +150,7 @@ export default function HostPage() {
       <div className="card page-grid">
         <div>
           <span className="pill">Host</span>
-          <h1 className="hero-title">Sala do professor</h1>
+          <h1 className="hero-title">Sala do professor: {serverHost || '...'}</h1>
           <p className="hero-copy">Controle a fila de jogadores, o quiz atual e a navegação entre perguntas.</p>
         </div>
 
