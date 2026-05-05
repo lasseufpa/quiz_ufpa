@@ -177,7 +177,9 @@ export default function EditorPage() {
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    window.URL.revokeObjectURL(url);
+    setTimeout(() => {
+      window.URL.revokeObjectURL(url);
+    }, 1000);
   }
 
   async function importQuiz(file) {
@@ -228,7 +230,7 @@ export default function EditorPage() {
           <input
             ref={importInputRef}
             type="file"
-            accept=".quiz"
+            accept=".quiz,.json"
             style={{ display: 'none' }}
             onChange={(event) => {
               const file = event.target.files?.[0];

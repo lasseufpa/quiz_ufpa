@@ -386,41 +386,65 @@ function buildQuizArchiveBuffer(data) {
   return zip.toBuffer();
 }
 
-function importQuizArchiveBuffer(buffer) {
-  const zip = new AdmZip(buffer);
-  const quizEntry = zip.getEntry('quiz.json');
-  if (!quizEntry) {
-    throw new Error('Arquivo .quiz inválido: não contém quiz.json');
+function readQuizDataFromBuffer(buffer) {
+  try {
+    const zip = new AdmZip(buffer);
+    const quizEntry = zip.getEntry('quiz.json');
+
+    if (quizEntry) {
+      return {
+        format: 'zip',
+        quizData: JSON.parse(zip.readAsText(quizEntry, 'utf8')),
+        zip
+      };
+    }
+  } catch {
+    // Fall back to legacy plain JSON .quiz files.
   }
 
-  const quizDataFromArchive = JSON.parse(zip.readAsText(quizEntry, 'utf8'));
+  const text = buffer.toString('utf8').trim();
+  if (!text) {
+    throw new Error('Arquivo .quiz vazio');
+  }
+
+  return {
+    format: 'json',
+    quizData: JSON.parse(text)
+  };
+}
+
+function importQuizArchiveBuffer(buffer) {
+  const imported = readQuizDataFromBuffer(buffer);
+  const quizDataFromArchive = imported.quizData;
   if (!quizDataFromArchive || typeof quizDataFromArchive !== 'object' || typeof quizDataFromArchive.title !== 'string' || !Array.isArray(quizDataFromArchive.questions)) {
     throw new Error('quiz.json mal formatado (faltando title ou questions)');
   }
 
-  const figureEntries = new Map();
-  for (const entry of zip.getEntries()) {
-    if (entry.entryName.startsWith('figures/') && !entry.isDirectory) {
-      figureEntries.set(path.basename(entry.entryName), entry.getData());
-    }
-  }
-
-  for (const question of quizDataFromArchive.questions) {
-    const figure = question.figure;
-    if (!figure || figure === 'none') {
-      continue;
+  if (imported.format === 'zip') {
+    const figureEntries = new Map();
+    for (const entry of imported.zip.getEntries()) {
+      if ((entry.entryName.startsWith('figures/') || entry.entryName.startsWith('quiz-figures/')) && !entry.isDirectory) {
+        figureEntries.set(path.basename(entry.entryName), entry.getData());
+      }
     }
 
-    const figureData = figureEntries.get(path.basename(figure));
-    if (!figureData) {
-      question.figure = 'none';
-      continue;
-    }
+    for (const question of quizDataFromArchive.questions) {
+      const figure = question.figure;
+      if (!figure || figure === 'none') {
+        continue;
+      }
 
-    const extension = path.extname(figure).toLowerCase().replace('.', '') || 'png';
-    const uniqueName = `${crypto.createHash('md5').update(`${Date.now()}${figure}`).digest('hex')}.${extension}`;
-    fs.writeFileSync(path.join(figuresDir, uniqueName), figureData);
-    question.figure = uniqueName;
+      const figureData = figureEntries.get(path.basename(figure));
+      if (!figureData) {
+        question.figure = 'none';
+        continue;
+      }
+
+      const extension = path.extname(figure).toLowerCase().replace('.', '') || 'png';
+      const uniqueName = `${crypto.createHash('md5').update(`${Date.now()}${figure}`).digest('hex')}.${extension}`;
+      fs.writeFileSync(path.join(figuresDir, uniqueName), figureData);
+      question.figure = uniqueName;
+    }
   }
 
   const baseName = sanitizeQuizName(quizDataFromArchive.title);
@@ -521,30 +545,6 @@ async function main() {
     res.json(quiz);
   });
 
-  app.post('/api/quiz/:quizName', (req, res) => {
-    const data = req.body;
-    if (!data || typeof data.title !== 'string' || !Array.isArray(data.questions)) {
-      res.status(400).json({ error: 'Invalid quiz data' });
-      return;
-    }
-
-    const safeName = sanitizeQuizName(req.params.quizName);
-    saveQuiz(safeName, data);
-    res.json({ message: 'Quiz saved successfully', name: safeName });
-  });
-
-  app.delete('/api/quiz/:quizName', (req, res) => {
-    const safeName = sanitizeQuizName(req.params.quizName);
-    const filePath = path.join(quizzesDir, `${safeName}.json`);
-    if (!fs.existsSync(filePath)) {
-      res.status(404).json({ error: 'Quiz not found' });
-      return;
-    }
-
-    fs.unlinkSync(filePath);
-    res.json({ message: 'Quiz deleted' });
-  });
-
   app.post('/api/quiz/export', (req, res) => {
     const data = req.body;
     if (!data || typeof data.title !== 'string' || !Array.isArray(data.questions)) {
@@ -553,8 +553,12 @@ async function main() {
     }
 
     const safeTitle = sanitizeQuizName(data.title);
-    const buffer = buildQuizArchiveBuffer(data);
-    res.setHeader('Content-Type', 'application/zip');
+    const exportData = {
+      title: data.title,
+      questions: data.questions
+    };
+    const buffer = Buffer.from(JSON.stringify(exportData, null, 2), 'utf8');
+    res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.quiz"`);
     res.send(buffer);
   });
@@ -580,6 +584,30 @@ async function main() {
     } catch (error) {
       res.status(400).json({ error: error.message || 'Erro ao processar o arquivo' });
     }
+  });
+
+  app.post('/api/quiz/:quizName', (req, res) => {
+    const data = req.body;
+    if (!data || typeof data.title !== 'string' || !Array.isArray(data.questions)) {
+      res.status(400).json({ error: 'Invalid quiz data' });
+      return;
+    }
+
+    const safeName = sanitizeQuizName(req.params.quizName);
+    saveQuiz(safeName, data);
+    res.json({ message: 'Quiz saved successfully', name: safeName });
+  });
+
+  app.delete('/api/quiz/:quizName', (req, res) => {
+    const safeName = sanitizeQuizName(req.params.quizName);
+    const filePath = path.join(quizzesDir, `${safeName}.json`);
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'Quiz not found' });
+      return;
+    }
+
+    fs.unlinkSync(filePath);
+    res.json({ message: 'Quiz deleted' });
   });
 
   app.post(['/api/upload_image', '/api/upload-image'], upload.single('image'), (req, res) => {
