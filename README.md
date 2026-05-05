@@ -1,66 +1,59 @@
-# ic_quiz
+# Quiz UFPA
 
-Uma ferramenta interativa inspirada no Kahoot, desenvolvida para dinamizar o aprendizado de conceitos de Inteligência Computacional.
+Aplicação de quiz em tempo real inspirada no Kahoot, com backend Node.js e frontend Next.js.
 
-## Passo a passo:
-### 1 - Clone o repositório:
-
-```sh
-git clone https://github.com/Frank-Bruno/ic_kahoot.git
-```
-
-### 2 - Instalação de dependências:
+## Como executar
 
 ```sh
-pip install -r requirements.txt
+npm install
+npm run dev
 ```
 
-### 3 - Inicie o servidor:
+Abra no navegador:
 
-```sh
-python app.py
+```text
+http://localhost:5000
+http://localhost:5000/host
+http://localhost:5000/host/login
+http://localhost:5000/admin/login
+http://localhost:5000/editor
 ```
 
-## Como Iniciar:
-Ao executar o código, aparecerá no terminal o IP ao qual o professor (admin) e aluno (usuário) devem logar.
+## Login do host e do admin
 
-```sh
-Servidor Flask-Quiz iniciado!
-Aponte seu navegador de host (professor) para: http://localhost:5000/host
-Aponte seu navegador de admin para: http://localhost:5000/admin
-Alunos devem acessar: http://10.10.20.163:5000
-```
+O host e o admin usam a mesma senha. Se `ADMIN_PASSWORD` não estiver definido, o sistema cria `admin123` na primeira inicialização e grava o hash em `.private/config.json`.
 
-### Crie seus quizzes!
-Use a interface em ``http://localhost:5000/editor`` para gerenciar seus próprios quizzes.
+O host precisa fazer login antes de abrir [app/host/page.jsx](app/host/page.jsx). Se o host desconectar, o estado do jogo fica salvo em `.private/game_save.json` e o próximo login pode retomar a partida.
 
-## Observações:
-- O aluno apenas consegue logar se seu nome estiver cadastrado. O cadastro pode ser feito na tela do admin ou acessando diretamente o arquivo ``.private/users.json``.
-- Formato para um ``.private/users.json``:
+## Dados persistidos
+
+Os usuários autorizados ficam em `.private/users.json` como uma lista de nomes.
+
+Exemplo:
+
 ```json
 [
   "nome único 1",
   "nome único 2"
 ]
 ```
-- Ainda não há suporte para importar/exportar quizzes através da interface gráfica. Assim, para compartilhar seus quizzes, é necessário copiar os arquivos correspondentes em ``static/quizzes`` e ``static/quiz-figures``.
-- Formato para as perguntas e respostas de um ``static/quizzes/Meu Quiz.json``:
+
+Os quizzes continuam armazenados em `static/quizzes/*.json`.
+
+Exemplo de quiz:
+
 ```json
 {
   "title": "Meu Quiz",
   "questions": [
     {
       "text": "Pergunta",
-      "options": [
-        "opção 0",
-        "opção 1",
-        "opção 2",
-        "opção 3"
-      ],
+      "options": ["opção 0", "opção 1", "opção 2", "opção 3"],
       "correct_option": 3,
-      "figure": "nome_da_figura.png" // ou "none, se não houver"
+      "figure": "nome_da_figura.png"
     }
   ]
 }
 ```
-- O backend (ainda) não possui um banco de dados como SQL.
+
+As imagens enviadas pelo editor são salvas em `static/quiz-figures/` e os gráficos de resposta são gerados em `static/graphs/`.

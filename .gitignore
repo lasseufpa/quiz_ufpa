@@ -5,3 +5,6 @@ static/*/*.jpg
 static/*/*.gif
 static/*/*.json
 .private
+node_modules
+.next/
+*.gz
