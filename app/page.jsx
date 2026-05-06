@@ -228,12 +228,15 @@ export default function PlayerPage() {
 
   const renderResultsView = () => {
     const currentAnswer = answerIndex;
-    const correctIndex = results?.correct_option?.toString?.() ?? null;
-    const message = currentAnswer === null
-      ? 'Você não respondeu a tempo!'
-      : currentAnswer === correctIndex
-        ? 'Você acertou!'
-        : 'Você errou!';
+    const hasFinalResult = results && results.correct_option !== undefined && results.correct_option !== null;
+    const correctIndex = hasFinalResult ? String(results.correct_option) : null;
+    const message = !hasFinalResult
+      ? (currentAnswer === null ? 'Resposta enviada! Aguardando resultados...' : (results?.message || 'Resposta enviada! Aguardando resultados...'))
+      : currentAnswer === null
+        ? 'Você não respondeu a tempo!'
+        : currentAnswer === correctIndex
+          ? 'Você acertou!'
+          : 'Você errou!';
 
     return (
       <section className="card page-grid" style={{ maxWidth: 920, margin: '0 auto' }}>
@@ -242,6 +245,7 @@ export default function PlayerPage() {
           <h1 className="hero-title">{message}</h1>
         </div>
 
+        {!hasFinalResult ? <div className="result-banner">Sua resposta foi enviada. Aguarde o professor mostrar o resultado final.</div> : null}
         {results?.message ? <div className="result-banner">{results.message}</div> : null}
 
         {results?.correct_option_text ? (

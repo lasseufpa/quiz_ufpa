@@ -18,13 +18,37 @@ export default function HostPage() {
   const [answerCount, setAnswerCount] = useState({ answered: 0, total: 0 });
   const [leaderboard, setLeaderboard] = useState([]);
 
+  const phaseMeta = {
+    lobby: {
+      label: 'Aguardando jogadores',
+      title: `Sala do professor: aguardando início (${serverHost})`,
+      copy: 'Selecione um quiz, aguarde a entrada dos jogadores e inicie a partida quando estiver pronto.'
+    },
+    question: {
+      label: 'Pergunta em andamento',
+      title: 'Pergunta atual',
+      copy: 'Acompanhe a pergunta exibida e o progresso das respostas em tempo real.'
+    },
+    results: {
+      label: 'Resultados da pergunta',
+      title: 'Resultados',
+      copy: 'Veja a alternativa correta, o gráfico de respostas e baixe o resultado da rodada.'
+    },
+    gameover: {
+      label: 'Fim da partida',
+      title: 'Placar final',
+      copy: 'Revise a classificação final e exporte o resultado consolidado.'
+    }
+  };
+  const activePhase = phaseMeta[phase] || phaseMeta.lobby;
+
   useEffect(() => {
     setSocket(getSocket());
   }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setServerHost(window.location.hostname);
+      setServerHost('');
     }
   }, []);
 
@@ -36,6 +60,9 @@ export default function HostPage() {
     const verifySession = async () => {
       const response = await fetch('/api/host/session');
       const payload = await response.json();
+      if (payload.serverUrl) {
+        setServerHost(payload.serverUrl);
+      }
       if (!payload.loggedIn) {
         router.push('/host/login');
         return;
@@ -56,7 +83,9 @@ export default function HostPage() {
         return;
       }
 
-      if (data.state === 1) {
+      if (data.state === 0) {
+        setPhase('lobby');
+      } else if (data.state === 1) {
         setPhase('question');
       } else if (data.state === 2) {
         setPhase('results');
@@ -145,16 +174,48 @@ export default function HostPage() {
   const nextQuestion = () => socket?.emit('next_question');
   const showResults = () => socket?.emit('show_results');
 
+  const downloadResultsAsCSV = (data) => {
+    if (!data) {
+      alert('Nenhum resultado para baixar.');
+      return;
+    }
+
+    const leaderboard = data.leaderboard || [];
+    if (leaderboard.length === 0) {
+      alert('Nenhum jogador para exibir.');
+      return;
+    }
+
+    const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '_');
+    const filename = `resultados_${timestamp}.csv`;
+    const csvContent = [
+      'Posição,Jogador,Pontuação',
+      ...leaderboard.map((player, index) => `${index + 1},"${player.nickname.replace(/"/g, '""')}",${player.score}`)
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <section className="page-grid">
       <div className="card page-grid">
         <div>
           <span className="pill">Host</span>
-          <h1 className="hero-title">Sala do professor: {serverHost || '...'}</h1>
-          <p className="hero-copy">Controle a fila de jogadores, o quiz atual e a navegação entre perguntas.</p>
+          <h1 className="hero-title">{activePhase.title}</h1>
+          <p className="hero-copy">{activePhase.copy}</p>
         </div>
 
         <div className="toolbar">
+          <div className="pill">{activePhase.label}</div>
           <select value={selectedQuiz} onChange={(event) => setSelectedQuiz(event.target.value)} style={{ minWidth: 280, flex: '1 1 280px' }}>
             <option value="">-- Selecionar quiz --</option>
             {quizzes.map((quiz) => (
@@ -175,20 +236,28 @@ export default function HostPage() {
         </div>
       </div>
 
-      <div className="card page-grid">
-        <h2 className="section-title">Jogadores</h2>
-        <div className="list">
-          {players.length === 0 ? (
-            <div className="result-banner">Nenhum jogador conectado.</div>
-          ) : (
-            players.map((player) => (
-              <div key={player} className="admin-list-item">{player}</div>
-            ))
-          )}
+      {phase === 'lobby' ? (
+        <div className="card page-grid">
+          <h2 className="section-title">Aguardando jogadores</h2>
+          <div className="result-banner">Servidor ativo: {serverHost || '...'}</div>
+          <div className="result-banner">
+            {players.length === 0
+              ? 'Nenhum jogador conectado ainda.'
+              : `${players.length} jogador${players.length === 1 ? '' : 'es'} conectado${players.length === 1 ? '' : 's'}.`}
+          </div>
+          <div className="list">
+            {players.length === 0 ? (
+              <div className="result-banner">A sala está pronta para receber participantes.</div>
+            ) : (
+              players.map((player) => (
+                <div key={player} className="admin-list-item">{player}</div>
+              ))
+            )}
+          </div>
         </div>
-      </div>
+      ) : null}
 
-      {phase !== 'lobby' ? (
+      {phase === 'question' ? (
         <div className="card page-grid">
           <h2 className="section-title">Pergunta atual</h2>
           <div className="result-banner latex-block" dangerouslySetInnerHTML={{ __html: renderLatexToHtml(question?.text || 'Aguardando pergunta.') }} />
@@ -206,12 +275,18 @@ export default function HostPage() {
           <h2 className="section-title">Resultados</h2>
           {results?.correct_option_text ? <div className="result-banner">Resposta correta: <span className="latex-inline" dangerouslySetInnerHTML={{ __html: renderLatexToHtml(results.correct_option_text) }} /></div> : null}
           {results?.chart_path ? <img src={results.chart_path} alt="Gráfico das respostas" style={{ width: '100%', borderRadius: 20 }} /> : null}
+          {results?.leaderboard ? (
+            <div className="toolbar">
+              <button className="success" onClick={() => downloadResultsAsCSV(results)}>Baixar resultados (CSV)</button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       {phase === 'gameover' ? (
         <div className="card page-grid">
           <h2 className="section-title">Placar final</h2>
+          <div className="result-banner">A partida terminou. Você pode revisar o ranking e baixar o CSV final.</div>
           <div className="scoreboard">
             {leaderboard.length === 0 ? (
               <div className="result-banner">Nenhum jogador participou.</div>
@@ -222,6 +297,9 @@ export default function HostPage() {
                 </div>
               ))
             )}
+          </div>
+          <div className="toolbar" style={{ marginTop: '1rem' }}>
+            <button className="success" onClick={() => downloadResultsAsCSV({ leaderboard })}>Baixar resultados finais (CSV)</button>
           </div>
         </div>
       ) : null}

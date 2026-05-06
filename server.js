@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const os = require('os');
 const crypto = require('crypto');
 const AdmZip = require('adm-zip');
 const express = require('express');
@@ -67,6 +68,27 @@ function readJsonFile(filePath, fallbackValue) {
 
 function writeJsonFile(filePath, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+}
+
+function getLocalIPv4Address() {
+  const interfaces = os.networkInterfaces();
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries || []) {
+      if (entry && entry.family === 'IPv4' && !entry.internal) {
+        return entry.address;
+      }
+    }
+  }
+
+  return '127.0.0.1';
+}
+
+function getServerDisplayUrl(req) {
+  const forwardedHost = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+  const portFromHeader = forwardedHost.includes(':') ? forwardedHost.split(':').pop() : '';
+  const port = portFromHeader || String(process.env.PORT || 5000);
+  const ipAddress = process.env.SERVER_IP || process.env.HOST_IP || getLocalIPv4Address();
+  return `http://${ipAddress}:${port}`;
 }
 
 function loadConfig() {
@@ -284,8 +306,54 @@ function buildQuestionPayload(questionData, questionIndex) {
   };
 }
 
+function resolveCorrectOptionIndex(questionData) {
+  const options = Array.isArray(questionData.options) ? questionData.options : [];
+  const optionCount = options.length;
+  if (optionCount === 0) {
+    return 0;
+  }
+
+  const rawValue = questionData.correct_option;
+  if (Number.isInteger(rawValue) && rawValue >= 0 && rawValue < optionCount) {
+    return rawValue;
+  }
+
+  if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+    const rounded = Math.round(rawValue);
+    if (rounded >= 0 && rounded < optionCount) {
+      return rounded;
+    }
+    if (rounded >= 1 && rounded <= optionCount) {
+      return rounded - 1;
+    }
+  }
+
+  if (typeof rawValue === 'string') {
+    const value = rawValue.trim();
+    if (/^\d+$/.test(value)) {
+      const numeric = Number(value);
+      if (numeric >= 0 && numeric < optionCount) {
+        return numeric;
+      }
+      if (numeric >= 1 && numeric <= optionCount) {
+        return numeric - 1;
+      }
+    }
+
+    const letterMatch = value.match(/^([A-Za-z])/);
+    if (letterMatch) {
+      const index = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
+      if (index >= 0 && index < optionCount) {
+        return index;
+      }
+    }
+  }
+
+  return 0;
+}
+
 function buildResultsPayload(questionData, questionIndex) {
-  const correctOptionIndex = Number(questionData.correct_option);
+  const correctOptionIndex = resolveCorrectOptionIndex(questionData);
   const correctOptionText = questionData.options[correctOptionIndex];
   const answerDistribution = getAnswerDistribution(questionData);
 
@@ -358,6 +426,19 @@ function generateSvgChart(answerDistribution, questionIndex) {
   const fileName = `q${questionIndex + 1}_results.svg`;
   fs.writeFileSync(path.join(graphsDir, fileName), svg, 'utf8');
   return `/static/graphs/${fileName}`;
+}
+
+function saveAnswerDistributionChart(answerDistribution, questionData, questionIndex) {
+  if (!Array.isArray(answerDistribution) || answerDistribution.length === 0) {
+    return '';
+  }
+
+  try {
+    return generateSvgChart(answerDistribution, questionIndex);
+  } catch (error) {
+    console.error('Falha ao salvar grafico de respostas:', error);
+    return '';
+  }
 }
 
 function loadQuestionFigure(questionData) {
@@ -687,7 +768,10 @@ async function main() {
   });
 
   app.get('/api/host/session', (req, res) => {
-    res.json({ loggedIn: Boolean(req.session.hostLoggedIn) });
+    res.json({
+      loggedIn: Boolean(req.session.hostLoggedIn),
+      serverUrl: getServerDisplayUrl(req)
+    });
   });
 
   app.post('/api/admin/logout', (req, res) => {
@@ -1003,8 +1087,10 @@ async function main() {
         return;
       }
 
+      const correctOptionIndex = resolveCorrectOptionIndex(questionData);
+
       for (const [sid, answer] of Object.entries(gameState.answers)) {
-        if (Number(answer) === Number(questionData.correct_option)) {
+        if (Number(answer) === correctOptionIndex) {
           gameState.scores[sid] = (gameState.scores[sid] || 0) + 10;
         }
       }
@@ -1066,9 +1152,10 @@ async function main() {
   const port = Number(process.env.PORT || 5000);
   server.listen(port, '0.0.0.0', () => {
     console.log('Servidor Node/Next iniciado!');
-    console.log(`Host: http://localhost:${port}/host`);
-    console.log(`Admin: http://localhost:${port}/admin/login`);
-    console.log(`Alunos: http://localhost:${port}`);
+    const serverUrl = `http://${getLocalIPv4Address()}:${port}`;
+    console.log(`Host: ${serverUrl}/host`);
+    console.log(`Admin: ${serverUrl}/admin/login`);
+    console.log(`Alunos: ${serverUrl}`);
   });
 }
 
