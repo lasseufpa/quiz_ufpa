@@ -124,12 +124,6 @@ export default function PlayerPage() {
       }
     };
 
-    const onHostReconnected = (data) => {
-      if (data?.message) {
-        alert(data.message);
-      }
-    };
-
     const onGameReset = () => {
       localStorage.removeItem('quizSessionToken');
       localStorage.removeItem('answerSubmitted');
@@ -156,7 +150,6 @@ export default function PlayerPage() {
     socket.on('question_time_over', onQuestionTimeOver);
     socket.on('answer_rejected', onAnswerRejected);
     socket.on('host_disconnected', onHostDisconnected);
-    socket.on('host_reconnected', onHostReconnected);
     socket.on('game_reset', onGameReset);
 
     return () => {
@@ -172,7 +165,6 @@ export default function PlayerPage() {
       socket.off('question_time_over', onQuestionTimeOver);
       socket.off('answer_rejected', onAnswerRejected);
       socket.off('host_disconnected', onHostDisconnected);
-      socket.off('host_reconnected', onHostReconnected);
       socket.off('game_reset', onGameReset);
     };
   }, [sessionToken, socket]);

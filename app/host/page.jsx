@@ -19,6 +19,8 @@ export default function HostPage() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [questionDeadline, setQuestionDeadline] = useState(null);
   const [timeLeftMs, setTimeLeftMs] = useState(null);
+  const [showQuestionPreview, setShowQuestionPreview] = useState(false);
+  const [skipNextGameOver, setSkipNextGameOver] = useState(false);
 
   const phaseMeta = {
     lobby: {
@@ -107,8 +109,13 @@ export default function HostPage() {
       setPhase('results');
       setResults(data);
       setQuestionDeadline(null);
+      setShowQuestionPreview(false);
     };
     const onGameOver = (data) => {
+      if (skipNextGameOver) {
+        setSkipNextGameOver(false);
+        return;
+      }
       setPhase('gameover');
       setLeaderboard(data || []);
       setQuestionDeadline(null);
@@ -135,6 +142,8 @@ export default function HostPage() {
       setLeaderboard([]);
       setAnswerCount({ answered: 0, total: 0 });
       setQuestionDeadline(null);
+      setShowQuestionPreview(false);
+      setSkipNextGameOver(false);
       alert('O jogo foi resetado!');
     };
 
@@ -207,6 +216,7 @@ export default function HostPage() {
 
   const forceEndQuiz = () => {
     if (window.confirm('Tem certeza que deseja finalizar o quiz agora?')) {
+      setSkipNextGameOver(true);
       socket?.emit('force_end_quiz');
     }
   };
@@ -316,9 +326,28 @@ export default function HostPage() {
           <h2 className="section-title">Resultados</h2>
           {results?.correct_option_text ? <div className="result-banner">Resposta correta: <span className="latex-inline" dangerouslySetInnerHTML={{ __html: renderLatexToHtml(results.correct_option_text) }} /></div> : null}
           {results?.chart_path ? <img src={results.chart_path} alt="Gráfico das respostas" style={{ width: '100%', borderRadius: 20 }} /> : null}
-          {results?.leaderboard ? (
-            <div className="toolbar">
+          <div className="toolbar">
+            <button className="ghost" onClick={() => setShowQuestionPreview(true)}>Mostrar pergunta novamente</button>
+            <button className="warning" onClick={nextQuestion}>Próxima pergunta</button>
+            {results?.leaderboard ? (
               <button className="success" onClick={() => downloadResultsAsCSV(results)}>Baixar resultados (CSV)</button>
+            ) : null}
+          </div>
+          {showQuestionPreview ? (
+            <div className="card" style={{ marginTop: '1rem' }}>
+              <div className="toolbar" style={{ justifyContent: 'space-between' }}>
+                <div className="pill">Pergunta atual</div>
+                <button className="ghost" onClick={() => setShowQuestionPreview(false)}>Fechar</button>
+              </div>
+              <div className="result-banner latex-block" dangerouslySetInnerHTML={{ __html: renderLatexToHtml(question?.text || 'Pergunta') }} />
+              {question?.chart_path ? <img src={question.chart_path} alt="Figura da pergunta" style={{ width: '100%', borderRadius: 20 }} /> : null}
+              <div className="option-grid" style={{ marginTop: '1rem' }}>
+                {(question?.options || []).map((option, index) => (
+                  <div key={`${question?.question_index || 0}-${index}`} className={`option-btn ${['is-a', 'is-b', 'is-c', 'is-d'][index] || ''}`}>
+                    <span className="latex-inline" dangerouslySetInnerHTML={{ __html: `${String.fromCharCode(65 + index)}) ${renderLatexToHtml(option)}` }} />
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
         </div>

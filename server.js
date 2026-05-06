@@ -214,6 +214,33 @@ function clearQuestionTimer() {
   }
 }
 
+function finalizeQuestionResults(io) {
+  if (!quizData || gameState.state !== STATE_QUESTION) {
+    return;
+  }
+
+  const questionData = quizData.questions[gameState.currentQuestion];
+  if (!questionData) {
+    return;
+  }
+
+  const correctOptionIndex = resolveCorrectOptionIndex(questionData);
+
+  for (const [sid, answer] of Object.entries(gameState.answers)) {
+    if (Number(answer) === correctOptionIndex) {
+      gameState.scores[sid] = (gameState.scores[sid] || 0) + 10;
+    }
+  }
+
+  const payload = buildResultsPayload(questionData, gameState.currentQuestion);
+  io.emit('show_results', payload);
+
+  clearQuestionTimer();
+  gameState.questionDeadline = null;
+  gameState.state = STATE_ANSWER;
+  saveFullState();
+}
+
 function handleQuestionTimeout(io) {
   clearQuestionTimer();
   if (gameState.state !== STATE_QUESTION || gameState.currentQuestion < 0) {
@@ -224,7 +251,7 @@ function handleQuestionTimeout(io) {
   io.emit('question_time_over', {
     question_index: gameState.currentQuestion
   });
-  saveFullState();
+  finalizeQuestionResults(io);
 }
 
 function scheduleQuestionTimer(io) {
@@ -1140,28 +1167,7 @@ async function main() {
       if (socket.id !== gameState.hostSid || !quizData) {
         return;
       }
-
-      const questionData = quizData.questions[gameState.currentQuestion];
-      if (!questionData) {
-        return;
-      }
-
-      const correctOptionIndex = resolveCorrectOptionIndex(questionData);
-
-      for (const [sid, answer] of Object.entries(gameState.answers)) {
-        if (Number(answer) === correctOptionIndex) {
-          gameState.scores[sid] = (gameState.scores[sid] || 0) + 10;
-        }
-      }
-
-      const payload = buildResultsPayload(questionData, gameState.currentQuestion);
-      io.emit('show_results', payload);
-
-      clearQuestionTimer();
-      gameState.questionDeadline = null;
-
-      gameState.state = STATE_ANSWER;
-      saveFullState();
+      finalizeQuestionResults(io);
     });
 
     socket.on('submit_answer', (data) => {
@@ -1185,6 +1191,10 @@ async function main() {
         });
       }
       saveFullState();
+
+      if (Object.keys(gameState.answers).length >= Object.keys(gameState.players).length) {
+        finalizeQuestionResults(io);
+      }
     });
 
     socket.on('force_end_quiz', () => {
