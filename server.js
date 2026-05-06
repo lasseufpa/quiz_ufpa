@@ -25,16 +25,20 @@ const STATE_QUESTION = 1;
 const STATE_ANSWER = 2;
 const STATE_GAMEOVER = 3;
 
+const QUESTION_DURATION_MS = Number(process.env.QUESTION_DURATION_MS || 30000);
+
 const playerSessions = new Map();
 let registeredUsers = new Map();
 let quizData = null;
+let questionTimeoutId = null;
 const gameState = {
   hostSid: null,
   players: {},
   currentQuestion: -1,
   answers: {},
   scores: {},
-  state: STATE_LOBBY
+  state: STATE_LOBBY,
+  questionDeadline: null
 };
 
 function createInitialGameState() {
@@ -44,7 +48,8 @@ function createInitialGameState() {
     currentQuestion: -1,
     answers: {},
     scores: {},
-    state: STATE_LOBBY
+    state: STATE_LOBBY,
+    questionDeadline: null
   };
 }
 
@@ -139,7 +144,8 @@ function saveFullState() {
       currentQuestion: gameState.currentQuestion,
       answers: gameState.answers,
       scores: gameState.scores,
-      state: gameState.state
+      state: gameState.state,
+      questionDeadline: gameState.questionDeadline
     },
     playerSessions: Object.fromEntries(playerSessions.entries()),
     quizData
@@ -178,6 +184,9 @@ function restoreFullState() {
   gameState.answers = restoredGameState.answers || {};
   gameState.scores = restoredGameState.scores || {};
   gameState.state = typeof restoredGameState.state === 'number' ? restoredGameState.state : STATE_LOBBY;
+  gameState.questionDeadline = typeof restoredGameState.questionDeadline === 'number'
+    ? restoredGameState.questionDeadline
+    : null;
 
   playerSessions.clear();
   for (const [token, sessionData] of Object.entries(state.playerSessions || {})) {
@@ -195,6 +204,42 @@ function clearGameState() {
   gameState.answers = {};
   gameState.scores = {};
   gameState.state = STATE_LOBBY;
+  gameState.questionDeadline = null;
+}
+
+function clearQuestionTimer() {
+  if (questionTimeoutId) {
+    clearTimeout(questionTimeoutId);
+    questionTimeoutId = null;
+  }
+}
+
+function handleQuestionTimeout(io) {
+  clearQuestionTimer();
+  if (gameState.state !== STATE_QUESTION || gameState.currentQuestion < 0) {
+    return;
+  }
+
+  gameState.questionDeadline = Date.now();
+  io.emit('question_time_over', {
+    question_index: gameState.currentQuestion
+  });
+  saveFullState();
+}
+
+function scheduleQuestionTimer(io) {
+  clearQuestionTimer();
+  if (!gameState.questionDeadline || gameState.state !== STATE_QUESTION) {
+    return;
+  }
+
+  const msLeft = gameState.questionDeadline - Date.now();
+  if (msLeft <= 0) {
+    handleQuestionTimeout(io);
+    return;
+  }
+
+  questionTimeoutId = setTimeout(() => handleQuestionTimeout(io), msLeft);
 }
 
 function deleteSavedGameFile() {
@@ -302,7 +347,9 @@ function buildQuestionPayload(questionData, questionIndex) {
     question_index: questionIndex,
     total_questions: quizData.questions.length,
     chart_path: loadQuestionFigure(questionData),
-    state: gameState.state
+    state: gameState.state,
+    question_deadline: gameState.questionDeadline,
+    question_duration_ms: QUESTION_DURATION_MS
   };
 }
 
@@ -543,6 +590,7 @@ function advanceQuestion(io) {
   gameState.answers = {};
   gameState.currentQuestion += 1;
   gameState.state = STATE_QUESTION;
+  gameState.questionDeadline = Date.now() + QUESTION_DURATION_MS;
 
   if (gameState.currentQuestion >= quizData.questions.length) {
     const leaderboard = createLeaderboard();
@@ -556,6 +604,7 @@ function advanceQuestion(io) {
 
   const questionData = quizData.questions[gameState.currentQuestion];
   io.emit('show_question', buildQuestionPayload(questionData, gameState.currentQuestion));
+  scheduleQuestionTimer(io);
 
   if (gameState.hostSid) {
     io.to(gameState.hostSid).emit('update_answer_count', {
@@ -858,7 +907,9 @@ async function main() {
           current_question: gameState.currentQuestion,
           state: gameState.state,
           total_players: Object.keys(gameState.players).length,
-          answered_count: Object.keys(gameState.answers).length
+          answered_count: Object.keys(gameState.answers).length,
+          question_deadline: gameState.questionDeadline,
+          question_duration_ms: QUESTION_DURATION_MS
         });
         io.emit('host_reconnected', { message: 'O apresentador reconectou. O jogo vai continuar.' });
 
@@ -866,11 +917,13 @@ async function main() {
           const questionData = quizData.questions[gameState.currentQuestion];
           if (questionData) {
             io.emit('show_question', buildQuestionPayload(questionData, gameState.currentQuestion));
+            scheduleQuestionTimer(io);
           }
         } else if (gameState.state === STATE_ANSWER && gameState.currentQuestion >= 0 && quizData) {
           const questionData = quizData.questions[gameState.currentQuestion];
           if (questionData) {
             io.emit('show_results', buildResultsPayload(questionData, gameState.currentQuestion));
+            clearQuestionTimer();
           }
         }
         return;
@@ -884,12 +937,16 @@ async function main() {
           current_question: gameState.currentQuestion,
           state: gameState.state,
           total_players: Object.keys(gameState.players).length,
-          answered_count: Object.keys(gameState.answers).length
+          answered_count: Object.keys(gameState.answers).length,
+          question_deadline: gameState.questionDeadline,
+          question_duration_ms: QUESTION_DURATION_MS
         });
         if (gameState.state === STATE_QUESTION) {
           io.emit('show_question', buildQuestionPayload(quizData.questions[gameState.currentQuestion], gameState.currentQuestion));
+          scheduleQuestionTimer(io);
         } else if (gameState.state === STATE_ANSWER) {
           io.emit('show_results', buildResultsPayload(quizData.questions[gameState.currentQuestion], gameState.currentQuestion));
+          clearQuestionTimer();
         }
       }
     });
@@ -1043,7 +1100,9 @@ async function main() {
         options: quizData && quizData.questions && quizData.questions[gameState.currentQuestion]
           ? quizData.questions[gameState.currentQuestion].options
           : [0, 1, 2, 3],
-        state: gameState.state
+        state: gameState.state,
+        question_deadline: gameState.questionDeadline,
+        question_duration_ms: QUESTION_DURATION_MS
       });
 
       if (gameState.hostSid) {
@@ -1098,12 +1157,20 @@ async function main() {
       const payload = buildResultsPayload(questionData, gameState.currentQuestion);
       io.emit('show_results', payload);
 
+      clearQuestionTimer();
+      gameState.questionDeadline = null;
+
       gameState.state = STATE_ANSWER;
       saveFullState();
     });
 
     socket.on('submit_answer', (data) => {
       if (!gameState.players[socket.id]) {
+        return;
+      }
+
+      if (gameState.questionDeadline && Date.now() > gameState.questionDeadline) {
+        socket.emit('answer_rejected', { reason: 'Tempo esgotado.' });
         return;
       }
 
@@ -1133,6 +1200,7 @@ async function main() {
       quizData = null;
       deleteSavedGameFile();
       io.emit('game_reset');
+      clearQuestionTimer();
     });
 
     socket.on('clear_saved_game', () => {
@@ -1146,8 +1214,13 @@ async function main() {
       quizData = null;
       io.emit('game_reset');
       io.to(socket.id).emit('admin_error', { message: 'Jogo foi resetado completamente.' });
+      clearQuestionTimer();
     });
   });
+
+  if (gameState.state === STATE_QUESTION) {
+    scheduleQuestionTimer(io);
+  }
 
   const port = Number(process.env.PORT || 5000);
   server.listen(port, '0.0.0.0', () => {

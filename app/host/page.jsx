@@ -17,6 +17,8 @@ export default function HostPage() {
   const [results, setResults] = useState(null);
   const [answerCount, setAnswerCount] = useState({ answered: 0, total: 0 });
   const [leaderboard, setLeaderboard] = useState([]);
+  const [questionDeadline, setQuestionDeadline] = useState(null);
+  const [timeLeftMs, setTimeLeftMs] = useState(null);
 
   const phaseMeta = {
     lobby: {
@@ -85,25 +87,34 @@ export default function HostPage() {
 
       if (data.state === 0) {
         setPhase('lobby');
+        setQuestionDeadline(null);
       } else if (data.state === 1) {
         setPhase('question');
+        setQuestionDeadline(typeof data.question_deadline === 'number' ? data.question_deadline : null);
       } else if (data.state === 2) {
         setPhase('results');
+        setQuestionDeadline(null);
       }
     };
     const onShowQuestion = (data) => {
       setPhase('question');
       setQuestion(data);
       setResults(null);
+      setQuestionDeadline(typeof data?.question_deadline === 'number' ? data.question_deadline : null);
     };
     const onUpdateAnswerCount = (data) => setAnswerCount(data || { answered: 0, total: 0 });
     const onShowResults = (data) => {
       setPhase('results');
       setResults(data);
+      setQuestionDeadline(null);
     };
     const onGameOver = (data) => {
       setPhase('gameover');
       setLeaderboard(data || []);
+      setQuestionDeadline(null);
+    };
+    const onQuestionTimeOver = () => {
+      setQuestionDeadline(Date.now());
     };
     const onPlayerLeft = () => socket.emit('host_join');
     const onHostDisconnected = (data) => {
@@ -123,6 +134,7 @@ export default function HostPage() {
       setResults(null);
       setLeaderboard([]);
       setAnswerCount({ answered: 0, total: 0 });
+      setQuestionDeadline(null);
       alert('O jogo foi resetado!');
     };
 
@@ -132,6 +144,7 @@ export default function HostPage() {
     socket.on('update_answer_count', onUpdateAnswerCount);
     socket.on('show_results', onShowResults);
     socket.on('game_over', onGameOver);
+    socket.on('question_time_over', onQuestionTimeOver);
     socket.on('player_left', onPlayerLeft);
     socket.on('host_disconnected', onHostDisconnected);
     socket.on('host_reconnected', onHostReconnected);
@@ -147,12 +160,39 @@ export default function HostPage() {
       socket.off('update_answer_count', onUpdateAnswerCount);
       socket.off('show_results', onShowResults);
       socket.off('game_over', onGameOver);
+      socket.off('question_time_over', onQuestionTimeOver);
       socket.off('player_left', onPlayerLeft);
       socket.off('host_disconnected', onHostDisconnected);
       socket.off('host_reconnected', onHostReconnected);
       socket.off('game_reset', onGameReset);
     };
   }, [router, socket]);
+
+  useEffect(() => {
+    if (!questionDeadline) {
+      setTimeLeftMs(null);
+      return;
+    }
+
+    const updateTime = () => {
+      const msLeft = Math.max(0, questionDeadline - Date.now());
+      setTimeLeftMs(msLeft);
+    };
+
+    updateTime();
+    const intervalId = setInterval(updateTime, 250);
+    return () => clearInterval(intervalId);
+  }, [questionDeadline]);
+
+  const formatTimeLeft = (ms) => {
+    if (ms === null || ms === undefined) {
+      return '--:--';
+    }
+    const totalSeconds = Math.ceil(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
 
   const startGame = () => {
     if (!selectedQuiz) {
@@ -264,6 +304,7 @@ export default function HostPage() {
           {question?.chart_path ? <img src={question.chart_path} alt="Figura da pergunta" style={{ width: '100%', borderRadius: 20 }} /> : null}
           <div className="toolbar">
             <div className="pill">Respondidas: {answerCount.answered} / {answerCount.total}</div>
+            <div className="pill">Tempo: {formatTimeLeft(timeLeftMs)}</div>
             <button onClick={showResults}>Mostrar resultados</button>
             <button className="warning" onClick={nextQuestion}>Próxima pergunta</button>
           </div>

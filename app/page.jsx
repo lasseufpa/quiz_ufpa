@@ -19,6 +19,8 @@ export default function PlayerPage() {
   const [score, setScore] = useState(0);
   const [sessionToken, setSessionToken] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('quizSessionToken') : null));
   const [answerIndex, setAnswerIndex] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('answerSubmitted') : null));
+  const [questionDeadline, setQuestionDeadline] = useState(null);
+  const [timeLeftMs, setTimeLeftMs] = useState(null);
 
   useEffect(() => {
     setSocket(getSocket());
@@ -57,13 +59,16 @@ export default function PlayerPage() {
         if (data.state === STATE_QUESTION) {
           if (localStorage.getItem('answerSubmitted') === null) {
             setView('question');
+            setQuestionDeadline(typeof data.question_deadline === 'number' ? data.question_deadline : null);
           } else {
             setView('results');
+            setQuestionDeadline(null);
           }
         }
 
         if (data.state === STATE_ANSWER) {
           setView('results');
+          setQuestionDeadline(null);
         }
       }
     };
@@ -81,22 +86,36 @@ export default function PlayerPage() {
       setAnswerIndex(null);
       localStorage.removeItem('answerSubmitted');
       setView('question');
+      setQuestionDeadline(typeof data?.question_deadline === 'number' ? data.question_deadline : null);
     };
 
     const onAnswerReceived = () => {
       setView('results');
       setResults((previous) => previous || { message: 'Resposta recebida! Aguardando resultados...' });
+      setQuestionDeadline(null);
     };
 
     const onShowResults = (data) => {
       setResults(data);
       setScore(data.scores?.[socket.id] || 0);
       setView('results');
+      setQuestionDeadline(null);
     };
 
     const onGameOver = (data) => {
       setLeaderboard(data || []);
       setView('gameover');
+      setQuestionDeadline(null);
+    };
+
+    const onQuestionTimeOver = () => {
+      setQuestionDeadline(Date.now());
+      setResults((previous) => previous || { message: 'Tempo esgotado. Aguarde o professor mostrar os resultados.' });
+      setView('results');
+    };
+
+    const onAnswerRejected = (data) => {
+      alert(data?.reason || 'Resposta rejeitada.');
     };
 
     const onHostDisconnected = (data) => {
@@ -121,6 +140,7 @@ export default function PlayerPage() {
       setResults(null);
       setLeaderboard([]);
       setScore(0);
+      setQuestionDeadline(null);
       alert('O jogo foi resetado.');
     };
 
@@ -133,6 +153,8 @@ export default function PlayerPage() {
     socket.on('answer_received', onAnswerReceived);
     socket.on('show_results', onShowResults);
     socket.on('game_over', onGameOver);
+    socket.on('question_time_over', onQuestionTimeOver);
+    socket.on('answer_rejected', onAnswerRejected);
     socket.on('host_disconnected', onHostDisconnected);
     socket.on('host_reconnected', onHostReconnected);
     socket.on('game_reset', onGameReset);
@@ -147,11 +169,39 @@ export default function PlayerPage() {
       socket.off('answer_received', onAnswerReceived);
       socket.off('show_results', onShowResults);
       socket.off('game_over', onGameOver);
+      socket.off('question_time_over', onQuestionTimeOver);
+      socket.off('answer_rejected', onAnswerRejected);
       socket.off('host_disconnected', onHostDisconnected);
       socket.off('host_reconnected', onHostReconnected);
       socket.off('game_reset', onGameReset);
     };
   }, [sessionToken, socket]);
+
+  useEffect(() => {
+    if (!questionDeadline) {
+      setTimeLeftMs(null);
+      return;
+    }
+
+    const updateTime = () => {
+      const msLeft = Math.max(0, questionDeadline - Date.now());
+      setTimeLeftMs(msLeft);
+    };
+
+    updateTime();
+    const intervalId = setInterval(updateTime, 250);
+    return () => clearInterval(intervalId);
+  }, [questionDeadline]);
+
+  const formatTimeLeft = (ms) => {
+    if (ms === null || ms === undefined) {
+      return '--:--';
+    }
+    const totalSeconds = Math.ceil(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
 
   const joinGame = () => {
     const trimmedNickname = nickname.trim();
@@ -204,27 +254,33 @@ export default function PlayerPage() {
     </section>
   );
 
-  const renderQuestionView = () => (
-    <section className="card page-grid" style={{ maxWidth: 980, margin: '0 auto' }}>
-      <div>
-        <span className="pill">Pergunta em andamento</span>
-        <h1 className="hero-title latex-block" style={{ fontSize: 'clamp(1.5rem, 3vw, 2.8rem)' }} dangerouslySetInnerHTML={{ __html: renderLatexToHtml(question?.text || 'Pergunta') }} />
-      </div>
+  const renderQuestionView = () => {
+    const isTimeUp = timeLeftMs !== null && timeLeftMs <= 0;
+    const isDisabled = answerIndex !== null || isTimeUp;
 
-      <div className="option-grid">
-        {(question?.options || []).map((option, index) => (
-          <button
-            key={`${question?.question_index || 0}-${index}`}
-            className={`option-btn ${['is-a', 'is-b', 'is-c', 'is-d'][index] || ''}`}
-            onClick={() => submitAnswer(index)}
-            disabled={answerIndex !== null}
-          >
-            <span className="latex-inline" dangerouslySetInnerHTML={{ __html: `${optionLetters[index]}) ${renderLatexToHtml(option)}` }} />
-          </button>
-        ))}
-      </div>
-    </section>
-  );
+    return (
+      <section className="card page-grid" style={{ maxWidth: 980, margin: '0 auto' }}>
+        <div>
+          <span className="pill">Pergunta em andamento</span>
+          <div className="pill" style={{ marginTop: '0.75rem' }}>Tempo: {formatTimeLeft(timeLeftMs)}</div>
+          <h1 className="hero-title latex-block" style={{ fontSize: 'clamp(1.5rem, 3vw, 2.8rem)' }} dangerouslySetInnerHTML={{ __html: renderLatexToHtml(question?.text || 'Pergunta') }} />
+        </div>
+
+        <div className="option-grid">
+          {(question?.options || []).map((option, index) => (
+            <button
+              key={`${question?.question_index || 0}-${index}`}
+              className={`option-btn ${['is-a', 'is-b', 'is-c', 'is-d'][index] || ''}`}
+              onClick={() => submitAnswer(index)}
+              disabled={isDisabled}
+            >
+              <span className="latex-inline" dangerouslySetInnerHTML={{ __html: `${optionLetters[index]}) ${renderLatexToHtml(option)}` }} />
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+  };
 
   const renderResultsView = () => {
     const currentAnswer = answerIndex;
