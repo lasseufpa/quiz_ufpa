@@ -57,3 +57,17 @@ Exemplo de quiz:
 ```
 
 As imagens enviadas pelo editor são salvas em `static/quiz-figures/` e os gráficos de resposta são gerados em `static/graphs/`.
+
+## Testes
+
+```sh
+npm run test:client
+npm run test:server
+npm run test:e2e
+npm run test:load -- --url=http://localhost:5000/api/quizzes --total=200 --concurrency=20
+```
+
+- `test:client`: unitarios + componentes (React Testing Library + Jest).
+- `test:server`: integracao de API, sockets e persistencia (Jest + Supertest + socket.io-client).
+- `test:e2e`: fluxo completo no navegador (Playwright).
+- `test:load`: carga simples no endpoint escolhido (Node.js + fetch).

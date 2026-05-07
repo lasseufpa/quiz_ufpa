@@ -11,14 +11,15 @@ const next = require('next');
 const { Server } = require('socket.io');
 
 const rootDir = __dirname;
-const privateDir = path.join(rootDir, '.private');
-const quizzesDir = path.join(rootDir, 'static', 'quizzes');
-const figuresDir = path.join(rootDir, 'static', 'quiz-figures');
-const graphsDir = path.join(rootDir, 'static', 'graphs');
-const scoresDir = path.join(rootDir, 'scores');
-const usersFile = path.join(privateDir, 'users.json');
-const configFile = path.join(privateDir, 'config.json');
-const gameSaveFile = path.join(privateDir, 'game_save.json');
+let staticDir = path.join(rootDir, 'static');
+let privateDir = path.join(rootDir, '.private');
+let quizzesDir = path.join(staticDir, 'quizzes');
+let figuresDir = path.join(staticDir, 'quiz-figures');
+let graphsDir = path.join(staticDir, 'graphs');
+let scoresDir = path.join(rootDir, 'scores');
+let usersFile = path.join(privateDir, 'users.json');
+let configFile = path.join(privateDir, 'config.json');
+let gameSaveFile = path.join(privateDir, 'game_save.json');
 
 const STATE_LOBBY = 0;
 const STATE_QUESTION = 1;
@@ -41,6 +42,40 @@ const gameState = {
   questionDeadline: null
 };
 
+function configurePaths() {
+  const dataRoot = process.env.QUIZ_DATA_DIR
+    ? path.resolve(process.env.QUIZ_DATA_DIR)
+    : rootDir;
+
+  staticDir = process.env.QUIZ_STATIC_DIR
+    ? path.resolve(process.env.QUIZ_STATIC_DIR)
+    : path.join(dataRoot, 'static');
+
+  privateDir = process.env.QUIZ_PRIVATE_DIR
+    ? path.resolve(process.env.QUIZ_PRIVATE_DIR)
+    : path.join(dataRoot, '.private');
+
+  quizzesDir = process.env.QUIZ_QUIZZES_DIR
+    ? path.resolve(process.env.QUIZ_QUIZZES_DIR)
+    : path.join(staticDir, 'quizzes');
+
+  figuresDir = process.env.QUIZ_FIGURES_DIR
+    ? path.resolve(process.env.QUIZ_FIGURES_DIR)
+    : path.join(staticDir, 'quiz-figures');
+
+  graphsDir = process.env.QUIZ_GRAPHS_DIR
+    ? path.resolve(process.env.QUIZ_GRAPHS_DIR)
+    : path.join(staticDir, 'graphs');
+
+  scoresDir = process.env.QUIZ_SCORES_DIR
+    ? path.resolve(process.env.QUIZ_SCORES_DIR)
+    : path.join(dataRoot, 'scores');
+
+  usersFile = path.join(privateDir, 'users.json');
+  configFile = path.join(privateDir, 'config.json');
+  gameSaveFile = path.join(privateDir, 'game_save.json');
+}
+
 function createInitialGameState() {
   return {
     hostSid: null,
@@ -51,6 +86,20 @@ function createInitialGameState() {
     state: STATE_LOBBY,
     questionDeadline: null
   };
+}
+
+function resetInMemoryState() {
+  playerSessions.clear();
+  registeredUsers = new Map();
+  quizData = null;
+  clearQuestionTimer();
+  gameState.hostSid = null;
+  gameState.players = {};
+  gameState.currentQuestion = -1;
+  gameState.answers = {};
+  gameState.scores = {};
+  gameState.state = STATE_LOBBY;
+  gameState.questionDeadline = null;
 }
 
 function ensureDirectories() {
@@ -178,7 +227,7 @@ function restoreFullState() {
   }
 
   const restoredGameState = state.gameState;
-  gameState.hostSid = restoredGameState.hostSid ?? null;
+  gameState.hostSid = null;
   gameState.players = restoredGameState.players || {};
   gameState.currentQuestion = typeof restoredGameState.currentQuestion === 'number' ? restoredGameState.currentQuestion : -1;
   gameState.answers = restoredGameState.answers || {};
@@ -653,7 +702,9 @@ function finishQuiz(io) {
   deleteSavedGameFile();
 }
 
-async function main() {
+async function createServer({ useNext = true } = {}) {
+  configurePaths();
+  resetInMemoryState();
   ensureDirectories();
   const config = loadConfig();
   registeredUsers = loadUsers();
@@ -661,10 +712,13 @@ async function main() {
   console.log(`--- ${registeredUsers.size} usuários carregados de ${path.relative(rootDir, usersFile)} ---`);
   console.log(restored ? 'Server resumed with saved game state.' : 'No saved game state found. Starting fresh.');
 
-  const dev = process.env.NODE_ENV !== 'production';
-  const nextApp = next({ dev, dir: rootDir });
-  const handle = nextApp.getRequestHandler();
-  await nextApp.prepare();
+  let handle = (req, res) => res.status(404).end();
+  if (useNext) {
+    const dev = process.env.NODE_ENV !== 'production';
+    const nextApp = next({ dev, dir: rootDir });
+    handle = nextApp.getRequestHandler();
+    await nextApp.prepare();
+  }
 
   const app = express();
   const server = http.createServer(app);
@@ -686,7 +740,7 @@ async function main() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
   app.use(sessionMiddleware);
-  app.use('/static', express.static(path.join(rootDir, 'static')));
+  app.use('/static', express.static(staticDir));
   app.use('/scores', express.static(scoresDir));
 
   app.get('/api/quizzes', (req, res) => {
@@ -900,8 +954,8 @@ async function main() {
 
       if (socket.id === gameState.hostSid) {
         console.log('Host desconectou. Salvando estado e pausando o jogo.');
-        saveFullState();
         gameState.hostSid = null;
+        saveFullState();
         io.emit('host_disconnected', {
           message: 'O apresentador desconectou. Aguarde a reconexão para retomar o jogo.'
         });
@@ -1232,6 +1286,11 @@ async function main() {
     scheduleQuestionTimer(io);
   }
 
+  return { app, server, io, config, restored };
+}
+
+async function main() {
+  const { server } = await createServer({ useNext: true });
   const port = Number(process.env.PORT || 5000);
   server.listen(port, '0.0.0.0', () => {
     console.log('Servidor Node/Next iniciado!');
@@ -1242,7 +1301,15 @@ async function main() {
   });
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  createServer,
+  configurePaths,
+  resetInMemoryState
+};

@@ -6,7 +6,12 @@
     "dev": "node server.js",
     "build": "next build",
     "start": "NODE_ENV=production node server.js",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "npm run test:client && npm run test:server",
+    "test:client": "jest --config jest.client.config.js",
+    "test:server": "jest --config jest.server.config.js",
+    "test:e2e": "playwright test",
+    "test:load": "node scripts/load-test.js"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
@@ -19,5 +24,14 @@
     "react-dom": "^19.0.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "jest": "^30.3.0",
+    "jest-environment-jsdom": "^30.3.0",
+    "supertest": "^7.2.2"
   }
 }
