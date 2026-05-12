@@ -24,11 +24,6 @@ export default function RootLayout({ children }) {
         <div className="page-shell">
           <header className="topbar">
             <a href="/" className="brand">Quiz UFPA</a>
-            <nav className="topnav">
-              <a href="/host">Host</a>
-              <a href="/editor">Editor</a>
-              <a href="/admin/login">Admin</a>
-            </nav>
           </header>
           <main className="page-main">{children}</main>
         </div>

@@ -299,6 +299,9 @@ export default function EditorPage() {
               >
                 + Adicionar opção
               </button>
+              <span className="muted" style={{ whiteSpace: 'nowrap' }}>
+                Índice da resposta correta (0 = primeira opção)
+              </span>
               <input
                 type="number"
                 min="0"
