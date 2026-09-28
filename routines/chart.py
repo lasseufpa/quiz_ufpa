@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('Agg')  # backend sem display (necessário rodando no servidor)
 import matplotlib.pyplot as plt
 import os
 import matplotlib.patches as patches 

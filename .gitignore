@@ -7,4 +7,5 @@ static/*/*.gif
 static/*/*.json
 .private
 static/mathjax
-routines/__pycache__
+*.pyc
+*/tex

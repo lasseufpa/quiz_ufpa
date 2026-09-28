@@ -1,38 +1,20 @@
 import os
 from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify
-from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask_socketio import SocketIO, emit
 import json
 
-import csv
-from datetime import datetime
-import os
-
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import socket
 import getpass
 
 import hashlib
 import time
 
-import numpy as np
-
 from routines import game_state_handler as game_handler
-from routines import files_handler, connections, game_logic, constants, administrator, chart
+from routines import files_handler, connections, game_logic, constants, administrator
 
-from werkzeug.utils import secure_filename
 from flask import send_from_directory
 
-import matplotlib.patches as patches  
-
-
-
 from pathlib import Path
-import hashlib
-
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-USERS_FILE = '.private/users.json'
 
 QUIZ_DATA = None
 
@@ -88,77 +70,6 @@ socketio = SocketIO(
 
 
 game_state = game_handler.clear_game_state()
-
-def export_scores_to_csv(scores, competition_scores, players):
-    """
-        Exporta os resultados do quiz para um arquivo CSV local.
-        Inclui colunas: Jogador, Pontuação (Avaliação), Pontuação (Competição).
-    """
-    quiz_title = "unknown_quiz"
-    if QUIZ_DATA and 'title' in QUIZ_DATA:
-        raw_title = QUIZ_DATA['title']
-        safe_title = "".join(c if c.isalnum() or c in '.-_' else '_' for c in raw_title)
-        quiz_title = safe_title.strip('_')
-        if not quiz_title:
-            quiz_title = "unknown_quiz"
-
-    date_str = datetime.now().strftime("%Y%m%d")
-    base_filename = f"scores_{quiz_title}_{date_str}.csv"
-    filepath = os.path.join(os.path.dirname(__file__), "scores", base_filename)
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-    if os.path.exists(filepath):
-        index = 2
-        while True:
-            name, ext = os.path.splitext(base_filename)
-            new_name = f"{name}_{index}{ext}"
-            new_path = os.path.join(os.path.dirname(filepath), new_name)
-            if not os.path.exists(new_path):
-                filepath = new_path
-                break
-            index += 1
-
-    with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['Jogador', 'Pontuação (Avaliação)', 'Pontuação (Competição)'])
-        for sid, player_name in players.items():
-            eval_score = scores.get(sid, 0)
-            comp_score = competition_scores.get(sid, 0)
-            writer.writerow([player_name, eval_score, comp_score])
-
-    print(f"✅ Resultados exportados para {filepath}")
-
-
-
-def load_users(filename=USERS_FILE):
-    """Carrega a lista de usuários do JSON. Retorna um DICIONÁRIO {lower: canonical}."""
-    try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if not isinstance(data, list) or not all(isinstance(s, str) for s in data):
-                print(f"Aviso: {filename} mal formatado. Tratando como lista vazia.")
-                return {} # ### MUDANÇA ### Retorna dict vazio
-            
-            # ### MUDANÇA ### Cria um dicionário {nome_minusculo: NomeOriginal}
-            return {user.lower(): user for user in data}
-            
-    except FileNotFoundError:
-        print(f"Aviso: {filename} não encontrado. Criando um novo.")
-        save_users({}) # ### MUDANÇA ### Salva dict vazio
-        return {} # ### MUDANÇA ### Retorna dict vazio
-    except json.JSONDecodeError:
-        print(f"Aviso: {filename} inválido. Tratando como lista vazia.")
-        return {} # ### MUDANÇA ### Retorna dict vazio
-
-def save_users(users_dict, filename=USERS_FILE):
-    """Salva o DICIONÁRIO de usuários de volta no JSON (apenas os nomes originais)."""
-    # ### MUDANÇA ### Extrai apenas os valores (nomes originais) para salvar
-    canonical_names = list(users_dict.values())
-    with open(filename, 'w', encoding='utf-8') as f:
-        json.dump(canonical_names, f, indent=2, ensure_ascii=False)
-
-REGISTERED_USERS = load_users()
-print(f"--- {len(REGISTERED_USERS)} usuários carregados de '{USERS_FILE}' ---")
 
 def generate_session_token():
     """Gera um token único para a sessão do jogador."""
@@ -330,83 +241,26 @@ def on_disconnect():
 def on_host_join():
     response = connections.connect_host(game_state, QUIZ_DATA)
 
-# ### INÍCIO EVENTOS ADMIN (Modificados) ###
+# --- Eventos ADMIN (delegam para routines/administrator.py) ---
 @socketio.on('admin_join')
 def on_admin_join():
     """Admin se conectou à página de gerenciamento."""
-    if not session.get('admin_logged_in'): return # Proteção
-    
-    print(f"Admin se conectou: {request.sid}")
-    # ### MUDANÇA ### Envia os valores (nomes originais) do dict
-    emit('update_user_list', sorted(list(REGISTERED_USERS.values())), to=request.sid)
+    administrator.admin_join()
 
 @socketio.on('add_user')
 def on_add_user(data):
     """Admin adicionou um novo usuário."""
-    if not session.get('admin_logged_in'): return # Proteção
-
-    nickname = data.get('nickname', '').strip()
-    nickname_lower = nickname.lower() # ### MUDANÇA ###
-    
-    # ### MUDANÇA ### Verifica a chave (minúscula)
-    if nickname and nickname_lower not in REGISTERED_USERS:
-        REGISTERED_USERS[nickname_lower] = nickname # ### MUDANÇA ### Adiciona ao dict
-        save_users(REGISTERED_USERS)
-        print(f"Admin adicionou usuário: {nickname}")
-        # ### MUDANÇA ### Envia os valores (nomes originais)
-        emit('update_user_list', sorted(list(REGISTERED_USERS.values())), broadcast=True)
-    elif nickname_lower in REGISTERED_USERS:
-         emit('admin_error', {'message': f'O nome "{nickname}" (ou variação) já existe.'}, to=request.sid)
-
+    administrator.add_user(data)
 
 @socketio.on('remove_user')
 def on_remove_user(data):
     """Admin removeu um usuário."""
-    if not session.get('admin_logged_in'): return # Proteção
-
-    nickname = data.get('nickname')
-    nickname_lower = nickname.lower() # ### MUDANÇA ###
-    
-    # ### MUDANÇA ### Procura a chave (minúscula) e remove
-    if nickname_lower in REGISTERED_USERS:
-        del REGISTERED_USERS[nickname_lower] # ### MUDANÇA ###
-        save_users(REGISTERED_USERS)
-        print(f"Admin removeu usuário: {nickname}")
-        # ### MUDANÇA ### Envia os valores (nomes originais)
-        emit('update_user_list', sorted(list(REGISTERED_USERS.values())), broadcast=True)
+    administrator.remove_user(data)
 
 @socketio.on('edit_user')
 def on_edit_user(data):
     """Admin editou o nome de um usuário."""
-    if not session.get('admin_logged_in'): return # Proteção
-
-    old_nickname = data.get('old_nickname')
-    new_nickname = data.get('new_nickname', '').strip()
-
-    if not old_nickname or not new_nickname:
-        emit('admin_error', {'message': 'O novo nome não pode ser vazio.'}, to=request.sid)
-        return
-
-    # ### MUDANÇA ### Converte tudo para minúsculo para verificação
-    old_lower = old_nickname.lower()
-    new_lower = new_nickname.lower()
-
-    if old_lower not in REGISTERED_USERS:
-        emit('admin_error', {'message': 'Usuário original não encontrado.'}, to=request.sid)
-        return
-
-    if new_lower in REGISTERED_USERS and new_lower != old_lower:
-        emit('admin_error', {'message': f'O nome "{new_nickname}" (ou variação) já existe.'}, to=request.sid)
-        return
-        
-    # ### MUDANÇA ### Executa a alteração no dict
-    del REGISTERED_USERS[old_lower]
-    REGISTERED_USERS[new_lower] = new_nickname
-    save_users(REGISTERED_USERS)
-    
-    print(f"Admin editou usuário: de '{old_nickname}' para '{new_nickname}'")
-    # ### MUDANÇA ### Envia os valores (nomes originais)
-    emit('update_user_list', sorted(list(REGISTERED_USERS.values())), broadcast=True)
+    administrator.edit_user(data)
 
 
 
@@ -419,19 +273,15 @@ def on_player_join(data):
     if not nickname:
         return
 
-    # --- INÍCIO DA NOVA LÓGICA DE VALIDAÇÃO (CASE-INSENSITIVE) ---
-    nickname_lower = nickname.lower() # ### MUDANÇA ###
-    
+    # --- Validação case-insensitive contra a allow-list ---
+    canonical_name = administrator.is_registered(nickname)
 
-    if nickname_lower not in REGISTERED_USERS:
+    if canonical_name is None:
         emit('join_failed', {'reason': 'Usuário não cadastrado. Fale com o administrador.'}, to=request.sid)
         print(f"Falha no login: Usuário '{nickname}' não cadastrado.")
         return
 
-    # ### MUDANÇA ### Pega o nome "correto" (ex: "Frank") do dict
-    canonical_name = REGISTERED_USERS[nickname_lower] 
-
-    # ### MUDANÇA ### Verifica se o nome "correto" já está na lista de valores
+    # Verifica se o nome "correto" já está na lista de valores
     if canonical_name in game_state['players'].values():
         emit('join_failed', {'reason': 'Este usuário já está no jogo.'}, to=request.sid)
         print(f"Falha no login: Usuário '{canonical_name}' já está no jogo.")
@@ -463,111 +313,23 @@ def on_player_join(data):
 
 @socketio.on('start_game')
 def on_start_game(data):
+    global QUIZ_DATA
     if request.sid != game_state['host_sid']:
         return
-    quiz = data.get('quiz-name')
-    global QUIZ_DATA
-    QUIZ_DATA = files_handler.load_quiz_data(quiz)
+    QUIZ_DATA = files_handler.load_quiz_data(data.get('quiz-name'))
     save_full_state(game_state, QUIZ_DATA)
     print("Iniciando o jogo!")
-    advance_question()
+    game_logic.advance_question(socketio, game_state, QUIZ_DATA)
 
 @socketio.on('next_question')
 def on_next_question():
     if request.sid != game_state['host_sid']:
         return
-    advance_question()
-
-def reading_timer():
-    print("called reading_timer()")
-    socketio.start_background_task(_timeout_reading_timer)
-    pass
-
-def _timeout_reading_timer():
-    socketio.sleep(10)
-    game_state['question_start_time'] = time.time()
-    
-    save_full_state(game_state, QUIZ_DATA)
-
-    current_host = game_state.get('host_sid')
-    print("Timeout")
-    if current_host:
-        socketio.emit('answer_allowed')
-
-def advance_question():
-    global game_state
-    game_state['answers'] = {}
-    game_state['answers_time'] = {}          # reset for new question
-    game_state['current_question'] += 1
-    game_state['state'] = constants.STATE_QUESTION
-    game_state['question_start_time'] = None
-    q_index = game_state['current_question']
-
-    if q_index >= len(QUIZ_DATA['questions']):
-        print("Fim do quiz.")
-        leaderboard = []
-        for sid, nickname in game_state['players'].items():
-            leaderboard.append({
-                'nickname': nickname,
-                'score': game_state['competition_scores'].get(sid, 0)
-            })
-        leaderboard.sort(key=lambda x: x['score'], reverse=True)
-        export_scores_to_csv(game_state['scores'], game_state['competition_scores'], game_state['players'])
-        emit('game_over', leaderboard, broadcast=True)
-        game_state = game_handler.clear_game_state()
-        game_state['state'] = constants.STATE_GAMEOVER
-        if os.path.exists(GAME_SAVE_FILE):
-            os.remove(GAME_SAVE_FILE)
-            print("Saved game file deleted by host.")
-    else:
-        question_data = QUIZ_DATA['questions'][q_index]
-        figure = question_data['figure']
-        chart_path = ""
-        if figure != "none":
-            chart_path = f"{constants.UPLOAD_FOLDER}/{figure}"
-        payload = {
-            'text': question_data['text'],
-            'options': question_data['options'],
-            'question_index': q_index,
-            'total_questions': len(QUIZ_DATA['questions']),
-            'chart_path': chart_path
-        }
-        
-        emit('show_question', payload, broadcast=True)
-        if game_state['host_sid']:
-            emit('update_answer_count', {
-                'answered': 0, 
-                'total': len(game_state['players'])
-            }, to=game_state['host_sid'])
-        reading_timer()
-        save_full_state(game_state, QUIZ_DATA)
+    game_logic.advance_question(socketio, game_state, QUIZ_DATA)
 
 @socketio.on('submit_answer')
 def on_submit_answer(data):
-    if request.sid not in game_state['players']:
-        return
-    if request.sid in game_state['answers']:
-        emit('answer_received', to=request.sid)
-        return
-    
-    option_index = data.get('option_index')
-    game_state['answers'][request.sid] = option_index
-    
-    # Compute response time
-    if game_state['question_start_time'] is not None:
-        elapsed = time.time() - game_state['question_start_time']
-        game_state['answers_time'][request.sid] = elapsed
-    else:
-        game_state['answers_time'][request.sid] = None
-    
-    print(f"Jogador {game_state['players'][request.sid]} respondeu: {option_index} em {game_state['answers_time'][request.sid]}s")
-    emit('answer_received', to=request.sid)
-    if game_state['host_sid']:
-        emit('update_answer_count', {
-            'answered': len(game_state['answers']), 
-            'total': len(game_state['players'])
-        }, to=game_state['host_sid'])
-    save_full_state(game_state, QUIZ_DATA)
+    game_logic.submit_answer(game_state, QUIZ_DATA, data)
 
 
 
@@ -575,86 +337,11 @@ def on_submit_answer(data):
 
 @socketio.on('show_results')
 def on_show_results():
-    if request.sid != game_state['host_sid']:
-        return
-    q_index = game_state['current_question']
-    if q_index < 0 or q_index >= len(QUIZ_DATA['questions']):
-        return
-    question_data = QUIZ_DATA['questions'][q_index]
-    correct_option_index = question_data['correct_option']
-    correct_option_text = question_data['options'][correct_option_index]
-    answer_distribution = [0] * len(question_data['options'])
-    for ans in game_state['answers'].values():
-        try:
-            answer_distribution[int(ans)] += 1
-        except (ValueError, TypeError, IndexError):
-            pass
-
-    # Evaluation scoring: +10 per correct answer
-    for sid, answer in game_state['answers'].items():
-        try:
-            if int(answer) == int(correct_option_index):
-                game_state['scores'][sid] = game_state['scores'].get(sid, 0) + 1
-        except:
-            pass
-
-    question_competition_points = {}
-    def sinc(t):
-        return np.sin(np.pi*t+1e-5)/(np.pi*t+1e-5)
-    for sid, answer in game_state['answers'].items():
-        try:
-            if int(answer) == int(correct_option_index):
-                t = game_state['answers_time'].get(sid)
-                if t is not None and t >= 0:
-                    comp_points = int(200*sinc(t/60)**4)
-                else:
-                    comp_points = 0
-                game_state['competition_scores'][sid] = game_state['competition_scores'].get(sid, 0) + comp_points
-                question_competition_points[game_state['players'][sid]] = comp_points
-        except:
-            pass
-
-    # Get top 3 for podium
-    top3 = sorted(question_competition_points.items(), key=lambda x: x[1], reverse=True)[:3]
-
-    # Generate combined chart (bar chart + podium)
-    combined_chart_path = chart.save_combined_results_chart(answer_distribution, question_data, q_index, top3)
-
-    payload = {
-        'correct_option': correct_option_index,
-        'correct_option_text': chr(ord('A')+correct_option_index) + ') ' + correct_option_text,
-        'scores': game_state['scores'],
-        'players': game_state['players'],
-        'answer_distribution': answer_distribution,
-        'chart_path': combined_chart_path,   # Now points to the combined image
-        # No separate 'podium_path' needed
-    }
-    emit('show_results', payload, broadcast=True)
-    print("Mostrando resultados com gráfico combinado.")
-    game_state['state'] = constants.STATE_ANSWER
-    save_full_state(game_state, QUIZ_DATA)
+    game_logic.show_results(game_state, QUIZ_DATA)
 
 @socketio.on('force_end_quiz')
 def on_force_end_quiz():
-    global game_state
-    if request.sid != game_state['host_sid']:
-        return 
-    print("Quiz finalizado forçadamente pelo host")
-    leaderboard = []
-    for sid, nickname in game_state['players'].items():
-        leaderboard.append({
-            'nickname': nickname,
-            'score': game_state['competition_scores'].get(sid, 0)
-        })
-    leaderboard.sort(key=lambda x: x['score'], reverse=True)
-    export_scores_to_csv(game_state['scores'], game_state['competition_scores'], game_state['players'])
-    emit('game_over', leaderboard, broadcast=True)
-    
-    game_state = game_handler.clear_game_state()
-    game_state['state'] = constants.STATE_GAMEOVER
-    if os.path.exists(GAME_SAVE_FILE):
-        os.remove(GAME_SAVE_FILE)
-        print("Saved game file deleted by host.")
+    game_logic.force_end_quiz(game_state, QUIZ_DATA)
 
 
 
@@ -830,17 +517,15 @@ def api_import_quiz():
         return jsonify({'error': f'Erro ao processar o arquivo: {str(e)}'}), 500
 
 # ========== ADDITIONS FOR PERSISTENT STATE & HOST RECONNECTION ==========
-GAME_SAVE_FILE = '.private/game_save.json'
-
 def save_full_state(game_state, QUIZ_DATA):
     game_handler.save_full_state(game_state, QUIZ_DATA)
 
 def load_full_state():
     """Load saved state from file, returns None if file doesn't exist."""
-    if not os.path.exists(GAME_SAVE_FILE):
+    if not os.path.exists(constants.GAME_SAVE_FILE):
         return None
     try:
-        with open(GAME_SAVE_FILE, 'r', encoding='utf-8') as f:
+        with open(constants.GAME_SAVE_FILE, 'r', encoding='utf-8') as f:
             state = json.load(f)
         print("✅ Game state loaded from file.")
         return state
@@ -877,8 +562,8 @@ else:
 def on_clear_saved_game():
     if request.sid != game_state['host_sid']:
         return
-    if os.path.exists(GAME_SAVE_FILE):
-        os.remove(GAME_SAVE_FILE)
+    if os.path.exists(constants.GAME_SAVE_FILE):
+        os.remove(constants.GAME_SAVE_FILE)
         print("Saved game file deleted by host.")
     # Also reset in‑memory state if desired
     game_state.update({

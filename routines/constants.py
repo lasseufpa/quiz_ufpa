@@ -5,5 +5,7 @@ STATE_GAMEOVER 	= 3
 QUIZZES_FOLDER =    'static/quizzes'
 UPLOAD_FOLDER =     'static/quiz-figures'
 SECRET_FOLDER =     '.private'
+SCORES_FOLDER =     'scores'
 QUESTION_DURATION = 30
+READING_DURATION = 10   # segundos de leitura antes de liberar as respostas
 GAME_SAVE_FILE = '.private/game_save.json'
