@@ -22,10 +22,26 @@ const finalScoreListEl = document.getElementById('final-score-list');
 const quizSelect = document.getElementById('quiz-select');
 const chartImg = document.getElementById('question-chart');
 
+const STATE_LOBBY 	    = 0;
+const STATE_QUESTION    = 1;
+const STATE_ANSWER 	    = 2;
+const STATE_GAMEOVER 	= 3;
+
+const QUESTION_DURATION = 30;
+
+let answering = false;
+
 let currentQuestionData = null; // stores text, options, chart_path, index, total
 // Avisa o servidor que esta é a tela do host
 socket.emit('host_join');
 
+lobbyView.style.display = 'block';
+
+function renderMath() {
+    if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
+        MathJax.typesetPromise().catch(err => console.warn('MathJax error:', err));
+    }
+}
 
 async function loadQuizList() {
     const res = await fetch('/api/quizzes');
@@ -41,7 +57,7 @@ async function loadQuizList() {
 
 // Atualiza a lista de jogadores no lobby
 socket.on('update_player_list', (players) => {
-    lobbyView.style.display='block'
+    //lobbyView.style.display='block'
     playerListEl.innerHTML = '';
     players.forEach(name => {
         const li = document.createElement('li');
@@ -78,11 +94,47 @@ if (selectedValue === "") {
 }
 });
 
+function stopAnswerTimer() {
+    if (answerTimerUpdateInterval) {
+        clearInterval(answerTimerUpdateInterval);
+        answerTimerUpdateInterval = null;
+    }
+    if (answerTimerNotification) {
+        answerTimerNotification.remove();
+        answerTimerNotification = null;
+    }
+    answerTimerStartTime = null;
+    answering = false;
+}
+
 // Mostra a pergunta
 socket.on('show_question', (data) => {
+    console.log("show_question triggered.");
+    console.log(data);
+    
     lobbyView.style.display = 'none';
     resultsView.style.display = 'none';
     questionView.style.display = 'block';
+
+    let remaining_time = data.remaining_time;
+    if (remaining_time == null){
+        answering = false;
+        hideAnswerTimerNotification();
+    }
+    else{
+        answering = true;
+        
+        if (remaining_time<0) {
+            socket.emit('show_results')
+            return;
+        } else {
+            console.log(remaining_time);
+            showAnswerTimerWithRemaining(remaining_time);
+        }
+    }
+        
+
+
 
     console.log(data.chart_path);
     if (data.chart_path === "")
@@ -94,9 +146,17 @@ socket.on('show_question', (data) => {
 
     questionTextEl.textContent = `(${data.question_index + 1}/${data.total_questions}) ${data.text}`;
 
-    // Exibe as opções completas
+    renderMath();
     const optionsContainerId = 'options-list-host';
     let optionsContainer = document.getElementById(optionsContainerId);
+    
+
+    if (optionsContainer && optionsContainer.style.display === 'grid') {
+        optionsContainer.style.display = 'none';
+        hideAnswerTimerNotification();  
+    } else if (optionsContainer) {
+        optionsContainer.style.display = 'none';
+    }
     if (!optionsContainer) {
         optionsContainer = document.createElement('div');
         optionsContainer.id = optionsContainerId;
@@ -104,14 +164,12 @@ socket.on('show_question', (data) => {
         chartImg.insertAdjacentElement('afterend', optionsContainer);
     }
 
-    optionsContainer.innerHTML = '';
-    data.options.forEach((opt, i) => {
-        const btn = document.createElement('div');
-        btn.classList.add('option-btn');
-        btn.textContent = `${String.fromCharCode(65 + i)}) ${opt}`;
-        optionsContainer.appendChild(btn);
-    });
-
+    if (answering) {
+        optionsContainer.style.display = 'grid';
+    } else
+    {
+        optionsContainer.style.display = 'none';
+    }
     // Store for later reuse (results view)
     currentQuestionData = {
         text: data.text,
@@ -123,11 +181,131 @@ socket.on('show_question', (data) => {
 
 });
 
+let answerTimerNotification = null;
+let answerTimerUpdateInterval = null;
+let answerTimerStartTime = null;
+
+function showAnswerTimerNotification() {
+    // Remove existing notification if any
+    if (answerTimerNotification) {
+        answerTimerNotification.remove();
+    }
+    
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.id = 'answer-timer-notification';
+    notification.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background-color: #2196F3;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 3rem;
+        font-weight: bold;
+        z-index: 1000;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        font-family: monospace;
+    `;
+    notification.textContent = '⏱️ 30s';
+    document.body.appendChild(notification);
+    answerTimerNotification = notification;
+    
+    // Start timer updates
+    answerTimerStartTime = Date.now();
+    if (answerTimerUpdateInterval) clearInterval(answerTimerUpdateInterval);
+    answerTimerUpdateInterval = setInterval(() => {
+        if (answerTimerNotification) {
+            const elapsed = Math.floor((Date.now() - answerTimerStartTime) / 1000);
+            answerTimerNotification.textContent = `⏱️ ${QUESTION_DURATION - elapsed}s`;
+            if (QUESTION_DURATION-elapsed ==0){
+                socket.emit('show_results')   
+            }
+        }
+    }, 1000);
+}
+
+function showAnswerTimerWithRemaining(remainingSeconds) {
+    console.log("showAnswerTimerWithRemaining", remainingSeconds);
+    const totalSeconds = Math.ceil(remainingSeconds); // arredonda pra cima
+    const notification = document.createElement('div');
+    notification.id = 'answer-timer-notification';
+    notification.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background-color: #2196F3;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 3rem;
+        font-weight: bold;
+        z-index: 1000;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        font-family: monospace;
+    `;
+    notification.textContent = `⏱️ ${totalSeconds}s`;
+    document.body.appendChild(notification);
+    answerTimerNotification = notification;
+
+    let secondsLeft = totalSeconds;
+    answerTimerUpdateInterval = setInterval(() => {
+        secondsLeft--;
+        if (secondsLeft <= 0) {
+            clearInterval(answerTimerUpdateInterval);
+            if (answerTimerNotification) answerTimerNotification.remove();
+            socket.emit('show_results');
+        } else {
+            if (answerTimerNotification)
+                answerTimerNotification.textContent = `⏱️ ${secondsLeft}s`;
+        }
+    }, 1000);
+}
+function hideAnswerTimerNotification() {
+    if (answerTimerUpdateInterval) {
+        clearInterval(answerTimerUpdateInterval);
+        answerTimerUpdateInterval = null;
+    }
+    if (answerTimerNotification) {
+        answerTimerNotification.remove();
+        answerTimerNotification = null;
+    }
+    answerTimerStartTime = null;
+}
+
+socket.on('answer_allowed', (data) => {
+    console.log("Triggered answer_allowed.\n Options:")
+    console.log(currentQuestionData.options);
+    // Exibe as opções completas
+    const optionsContainerId = 'options-list-host';
+    
+    let optionsContainer = document.getElementById(optionsContainerId);
+    
+    optionsContainer.innerHTML = '';
+    currentQuestionData.options.forEach((opt, i) => {
+        const btn = document.createElement('div');
+        btn.classList.add('option-btn');
+        btn.textContent = `${String.fromCharCode(65 + i)}) ${opt}`;
+        optionsContainer.appendChild(btn);
+    });
+    optionsContainer.style.display = "grid";
+    renderMath();
+    showAnswerTimerNotification();
+});
+
 
 // Atualiza a contagem de respostas
 socket.on('update_answer_count', (data) => {
     answerCountEl.textContent = data.answered;
     totalPlayersEl.textContent = data.total;
+
+    if (data.answered === data.total && data.total > 0) {
+        if (resultsView.style.display !== 'block') {
+            console.log('All players answered. Auto‑showing results.');
+            socket.emit('show_results');
+        }
+    }
 });
 
 // Botão de Mostrar Resultados
@@ -137,14 +315,18 @@ document.getElementById('show-results-btn').addEventListener('click', () => {
 
 // Mostra os resultados da pergunta
 socket.on('show_results', (data) => {
+    hideAnswerTimerNotification();
     questionView.style.display = 'none';
     
     correctTextEl.textContent = data.correct_option_text;
 
+    renderMath();
+    
     // Atualiza a imagem do gráfico gerado pelo Python
     const chartImg = document.getElementById('results-chart');
     chartImg.src = data.chart_path + '?t=' + new Date().getTime(); // força atualização
     resultsView.style.display = 'block';
+
 });
 
 
@@ -221,21 +403,77 @@ socket.on('game_reset', () => {
 // Handle resume_host_state to restore the host screen
 socket.on('resume_host_state', (data) => {
     console.log('Restoring host state:', data);
-    
+    console.log('remaining_time type/value:', data.remaining_time, typeof data.remaining_time);
     const gameState = data.state;
     const currentQuestion = data.current_question;
+    const question_data = data.question_data;
     const totalPlayers = data.total_players;
     const answeredCount = data.answered_count;
+
+    currentQuestionData = {
+        text: question_data.text,
+        options: question_data.options,
+        chart_path: question_data.chart_path,
+        question_index: data.question_index,
+        total_questions: data.total_questions
+    };
+
+    console.log(currentQuestionData);
     
     // First, hide all views
     lobbyView.style.display = 'none';
     questionView.style.display = 'none';
     resultsView.style.display = 'none';
     gameOverView.style.display = 'none';
+
+    // Restore timer for STATE_QUESTION
+    if (gameState === STATE_QUESTION && data.remaining_time !== null && data.remaining_time > 0) {
+        //hideAnswerTimerNotification();
+
+        // 1. Mostra o timer com o tempo restante (arredondado)
+        //showAnswerTimerWithRemaining(data.remaining_time);
+
+        // 2. Restaura o texto da pergunta
+        const questionTextEl = document.getElementById('question-text');
+        if (questionTextEl && currentQuestionData) {
+            questionTextEl.textContent = `(${currentQuestionData.question_index + 1}/${currentQuestionData.total_questions}) ${currentQuestionData.text}`;
+            renderMath(); // se houver MathJax
+        }
+
+        // 3. Restaura o gráfico da pergunta
+        const chartImg = document.getElementById('question-chart');
+        if (chartImg && currentQuestionData.chart_path && currentQuestionData.chart_path !== "") {
+            chartImg.src = currentQuestionData.chart_path + '?t=' + Date.now();
+            chartImg.style.display = 'block';
+        } else if (chartImg) {
+            chartImg.style.display = 'none';
+        }
+
+        // 4. Garante que o container de opções exista, seja preenchido e fique visível
+        let optionsContainer = document.getElementById('options-list-host');
+        if (!optionsContainer) {
+            optionsContainer = document.createElement('div');
+            optionsContainer.id = 'options-list-host';
+            optionsContainer.classList.add('grid-options');
+            const ref = document.getElementById('question-chart') || document.getElementById('question-text');
+            if (ref) ref.insertAdjacentElement('afterend', optionsContainer);
+        }
+        optionsContainer.innerHTML = '';
+        currentQuestionData.options.forEach((opt, i) => {
+            const btn = document.createElement('div');
+            btn.classList.add('option-btn');
+            btn.textContent = `${String.fromCharCode(65 + i)}) ${opt}`;
+            optionsContainer.appendChild(btn);
+        });
+        optionsContainer.style.display = 'grid';
+    } 
+    else if (gameState !== STATE_QUESTION) {
+        hideAnswerTimerNotification();
+    }
     
     // Restore based on game state
     switch(gameState) {
-        case 'lobby':
+        case STATE_LOBBY:
             lobbyView.style.display = 'block';
             // Force end button visibility based on players
             if (forceEndBtn && totalPlayers > 0) {
@@ -243,8 +481,7 @@ socket.on('resume_host_state', (data) => {
             }
             break;
             
-        case 'question':
-        case 'QUESTION':
+        case STATE_QUESTION:
             questionView.style.display = 'block';
             // Update answer counts
             if (answerCountEl && totalPlayersEl) {
@@ -255,14 +492,12 @@ socket.on('resume_host_state', (data) => {
             // So we don't need to request it again
             break;
             
-        case 'answer':
-        case 'ANSWER':
+        case STATE_ANSWER:
             resultsView.style.display = 'block';
             // The show_results event will be sent separately by the server
             break;
             
-        case 'game_over':
-        case 'GAME_OVER':
+        case STATE_GAMEOVER:
             gameOverView.style.display = 'block';
             break;
             
@@ -357,6 +592,8 @@ function showQuestionAgain() {
 
     // Show modal
     modal.style.display = 'flex';
+
+    renderMath();   
 }
 
 // Close modal

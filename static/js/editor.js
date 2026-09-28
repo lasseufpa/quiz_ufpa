@@ -85,7 +85,7 @@ function renderQuestions() {
             const radio = li.querySelector('input[type="radio"]');
             radio.addEventListener('change', () => {
                 if (radio.checked) {
-                    quizData.questions[qIdx].correct_option = parseInt(radio.value);
+                    quizData.questions[idx].correct_option = parseInt(radio.value);
                 }
             });
         });

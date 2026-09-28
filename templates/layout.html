@@ -315,7 +315,28 @@
             background-color: #6c757d;
             color: white;
         }
+        mjx-container {
+        font-size: 160% !important;
+        font-weight: 600 !important;
+        }
+
+        mjx-mi, mjx-mo, mjx-mn {
+        font-weight: 600 !important;
+        }
     </style>
+    <script src="{{ url_for('static', filename='mathjax/tex-chtml.js') }}" id="MathJax-script" async></script>
+    <script>
+    window.MathJax = {
+        tex: {  
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']],
+        processEscapes: true
+        },
+        options: {
+        ignoreHtmlClass: 'no-mathjax'
+        }
+    };
+    </script>
 </head>
 
 <body>

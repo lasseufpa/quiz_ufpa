@@ -17,6 +17,7 @@ const STATE_LOBBY = 0
 const STATE_QUESTION = 1
 const STATE_ANSWER = 2
 const STATE_GAMEOVER = 3
+let allow_answer = false;
 
 let myLastAnswerIndex = null;
 let lastAnsweredQuestionIndex = null; // stores the index of the question answered
@@ -74,40 +75,68 @@ function restorePlayerSession() {
         'new_sid': mySid 
     });
 }
-
-function show_question(data){
-    console.log('gamestate = '+data.state)
+// ========== FUNÇÃO show_question MODIFICADA ==========
+function show_question(data) {
+    console.log('gamestate = ' + data.state);
     waitView.style.display = 'none';
     resultView.style.display = 'none';
     questionView.style.display = 'block';
 
-    //questionTextEl.textContent = data.text;
     questionTextEl.textContent = '';
-
     optionsGrid.innerHTML = '';
 
     const letters = ['A', 'B', 'C', 'D'];
 
     data.options.forEach((option, index) => {
         const btn = document.createElement('button');
-        btn.textContent = letters[index] || '?'; // mostra só A, B, C, D
+        btn.textContent = letters[index] || '?';
         btn.classList.add('option-btn');
         btn.dataset.index = index;
 
+        // Inicialmente desabilitado e com estilo cinza
+        btn.disabled = true;
+        btn.style.cursor = 'not-allowed';
+
+        // Listener de clique (só será executado se o botão estiver habilitado)
         btn.addEventListener('click', () => {
+            // Se já respondeu, não faz nada (segurança extra)
+            if (myLastAnswerIndex !== null) return;
+
             socket.emit('submit_answer', { 'option_index': index });
             myLastAnswerIndex = index.toString();
-            lastAnsweredQuestionIndex = data.question_index; // ← store question index
+            lastAnsweredQuestionIndex = data.question_index;
             localStorage.setItem("answerSubmitted", myLastAnswerIndex);
             localStorage.setItem("lastAnsweredQuestionIndex", lastAnsweredQuestionIndex);
 
+            // Desabilita todos e destaca o escolhido
             optionsGrid.querySelectorAll('button').forEach(b => b.disabled = true);
             btn.style.backgroundColor = '#007bff';
             btn.style.color = 'white';
         });
+
         optionsGrid.appendChild(btn);
     });
 }
+
+function allow_answers(){
+const buttons = optionsGrid.querySelectorAll('.option-btn');
+    buttons.forEach(btn => {
+        if (myLastAnswerIndex === null) {
+            btn.disabled = false;
+            btn.style.cursor = 'pointer';
+        }
+    });
+    console.log('Respostas liberadas');
+}
+
+socket.on('answer_allowed', () => {
+    // Habilita todos os botões que ainda não foram respondidos
+    allow_answers();
+});
+
+
+
+
 
 function update_waiting_screen(myLastAnswerIndex, correctOptionIndex){
     if (myLastAnswerIndex !== null) {
@@ -160,6 +189,9 @@ console.log('Sessão restaurada com sucesso, gamestate = '+data.state);
 joinView.style.display = 'none';
 waitView.style.display = 'block';
 nicknameDisplay.textContent = data.nickname;
+allow_answer = data.allow_answer;
+
+
 
 // Retrieve stored data
 const storedAnswer = localStorage.getItem('answerSubmitted');
@@ -194,6 +226,9 @@ if (data.current_question >= 0) {
     }
     if (data.state == STATE_ANSWER) {
         update_waiting_screen(myLastAnswerIndex, correctOptionIndex);
+    }
+    if (allow_answer){
+    allow_answers();
     }
 }
 });

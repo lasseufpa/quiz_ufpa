@@ -1,0 +1,9 @@
+STATE_LOBBY 	= 0
+STATE_QUESTION 	= 1
+STATE_ANSWER 	= 2
+STATE_GAMEOVER 	= 3
+QUIZZES_FOLDER =    'static/quizzes'
+UPLOAD_FOLDER =     'static/quiz-figures'
+SECRET_FOLDER =     '.private'
+QUESTION_DURATION = 30
+GAME_SAVE_FILE = '.private/game_save.json'

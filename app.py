@@ -16,32 +16,32 @@ import getpass
 import hashlib
 import time
 
+import numpy as np
+
+from routines import game_state_handler as game_handler
+from routines import files_handler, connections, game_logic, constants, administrator, chart
+
 from werkzeug.utils import secure_filename
 from flask import send_from_directory
 
 import matplotlib.patches as patches  
 
-PLAYER_SESSIONS = {}  # {session_token: {'sid': sid, 'nickname': nickname}}
-
-STATE_LOBBY 	= 0
-STATE_QUESTION 	= 1
-STATE_ANSWER 	= 2
-STATE_GAMEOVER 	= 3
 
 
 from pathlib import Path
 import hashlib
 
-# Configuration
-QUIZZES_FOLDER =    'static/quizzes'          # stores quizname.json files
-UPLOAD_FOLDER =     'static/quiz-figures'           # stores quiz figures
-SECRET_FOLDER =     '.private'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+USERS_FILE = '.private/users.json'
+
+QUIZ_DATA = None
+
+
 
 # Create folders if they don't exist
-os.makedirs(QUIZZES_FOLDER, exist_ok=True)
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(SECRET_FOLDER, exist_ok=True)
+os.makedirs(constants.QUIZZES_FOLDER, exist_ok=True)
+os.makedirs(constants.UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(constants.SECRET_FOLDER, exist_ok=True)
 
 secretpath = Path(__file__).parent /".private" /".secret"
 
@@ -87,20 +87,7 @@ socketio = SocketIO(
 )
 
 
-def clear_game_state():
-    game_state = {
-        'host_sid': None,
-        'players': {},
-        'current_question': -1,
-        'answers': {},
-        'scores': {},
-        'competition_scores': {},      # NEW
-        'state': 0,
-        'question_start_time': None,   # NEW
-        'answers_time': {}             # NEW
-    }
-    return game_state
-game_state = clear_game_state()
+game_state = game_handler.clear_game_state()
 
 def export_scores_to_csv(scores, competition_scores, players):
     """
@@ -143,38 +130,6 @@ def export_scores_to_csv(scores, competition_scores, players):
 
 
 
-# --- Nosso "Banco de Dados" de Perguntas ---
-def load_quiz_data(file):
-    """Carrega as perguntas de um arquivo JSON."""
-    filename = Path(__file__).parent / 'static'/ 'quizzes' / (file + '.json')
-    try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            # Validação simples para garantir que o arquivo tem o formato esperado
-            if 'title' not in data or 'questions' not in data:
-                print(f"!!! ERRO: O arquivo '{filename}' está mal formatado. Faltando 'title' ou 'questions'.")
-                exit(1) # Sai do programa
-            
-            print(f"--- Quiz '{data['title']}' carregado com sucesso de '{filename}' ---")
-            return data
-            
-    except FileNotFoundError:
-        print(f"!!! ERRO: Arquivo do quiz '{filename}' não encontrado. !!!")
-        print(f"Crie o arquivo '{filename}' no mesmo diretório do app.py.")
-        exit(1) # Sai do programa
-        
-    except json.JSONDecodeError:
-        print(f"!!! ERRO: O arquivo '{filename}' contém um JSON inválido. !!!")
-        print("Use um validador de JSON online para verificar a sintaxe (aspas duplas, vírgulas, etc.).")
-        exit(1) # Sai do programa
-
-# --- Nosso "Banco de Dados" de Perguntas (Agora carregado do arquivo) ---
-QUIZ_DATA = None
-
-
-# ### INÍCIO BLOCO MODIFICADO: Gerenciamento de Usuários ###
-USERS_FILE = '.private/users.json'
-
 def load_users(filename=USERS_FILE):
     """Carrega a lista de usuários do JSON. Retorna um DICIONÁRIO {lower: canonical}."""
     try:
@@ -202,13 +157,8 @@ def save_users(users_dict, filename=USERS_FILE):
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(canonical_names, f, indent=2, ensure_ascii=False)
 
-# Carrega os usuários na inicialização
-REGISTERED_USERS = load_users() # ### MUDANÇA ### Agora é um dict
+REGISTERED_USERS = load_users()
 print(f"--- {len(REGISTERED_USERS)} usuários carregados de '{USERS_FILE}' ---")
-# ### FIM BLOCO MODIFICADO ###
-
-
-# --- Rotas HTTP (Modificadas para incluir Admin) ---
 
 def generate_session_token():
     """Gera um token único para a sessão do jogador."""
@@ -219,7 +169,6 @@ def generate_session_token():
 def player_join():
     return render_template('player.html')
 
-# Modify the host route to require admin login
 @app.route('/host')
 def host_view():
     if not session.get('host_logged_in'):
@@ -234,8 +183,8 @@ def check_session():
     """Verifica se existe uma sessão válida para o token fornecido."""
     token = request.args.get('token')
     
-    if token in PLAYER_SESSIONS:
-        session_data = PLAYER_SESSIONS[token]
+    if token in game_state['PLAYER_SESSIONS']:
+        session_data = game_state['PLAYER_SESSIONS'][token]
         # Verifica se o jogador ainda está no jogo
         if session_data['sid'] in game_state['players']:
             return jsonify({
@@ -250,8 +199,8 @@ def on_restore_session(data):
     token = data.get('token')
     new_sid = data.get('new_sid')
     
-    if token in PLAYER_SESSIONS:
-        session_data = PLAYER_SESSIONS[token]
+    if token in game_state['PLAYER_SESSIONS']:
+        session_data = game_state['PLAYER_SESSIONS'][token]
         old_sid = session_data['sid']
         nickname = session_data['nickname']
         
@@ -272,19 +221,25 @@ def on_restore_session(data):
                 game_state['answers_time'][new_sid] = game_state['answers_time'].pop(old_sid)
             
             # Atualiza o token com o novo SID
-            PLAYER_SESSIONS[token]['sid'] = new_sid
+            game_state['PLAYER_SESSIONS'][token]['sid'] = new_sid
             
+            allow_answer = False
+            if game_state['question_start_time'] is not None:
+                elapsed_time = time.time() - game_state['question_start_time']
+                if elapsed_time < constants.QUESTION_DURATION:
+                    allow_answer = True
             # Notifica o jogador
             emit('session_restored', {
                 'nickname': nickname,
                 'current_question': game_state['current_question'],
                 'current_score': game_state['scores'].get(new_sid, 0),
                 'options': [0,1,2,3],
-                'state': game_state['state']
+                'state': game_state['state'],
+                'allow_answer' : allow_answer
             }, to=new_sid)
             
             # Atualiza o host
-            if game_state['host_sid'] and game_state['state']==STATE_LOBBY:
+            if game_state['host_sid'] and game_state['state']==constants.STATE_LOBBY:
                 emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
             
             print(f"Sessão restaurada para {nickname}. Novo SID: {new_sid}")
@@ -311,7 +266,7 @@ def host_login():
             print("Tentativa de login de anfitrião falhou.")
     return render_template('host_login.html')
 
-# ### INÍCIO BLOCO NOVAS ROTAS ADMIN
+
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     """Página de login do admin."""
@@ -343,8 +298,6 @@ def admin_logout():
     session.pop('admin_logged_in', None)
     return redirect(url_for('admin_login'))
 
-# --- Eventos WebSocket ---
-
 @socketio.on('connect')
 def on_connect():
     print(f"Cliente conectado: {request.sid}")
@@ -356,7 +309,7 @@ def on_disconnect():
     if request.sid == game_state['host_sid']:
         print("!!! O ANFITRIÃO DESCONECTOU. Salvando estado e pausando o jogo. !!!")
         # Save current state before clearing host
-        save_full_state()
+        save_full_state(game_state, QUIZ_DATA)
         game_state['host_sid'] = None
         # Tell all players that host is gone but game is paused
         emit('host_disconnected', {
@@ -365,14 +318,6 @@ def on_disconnect():
 
     elif request.sid in game_state['players']:
         nickname = game_state['players'].get(request.sid, '??')
-        # # Remove player from game
-        # del game_state['players'][request.sid]
-        # game_state['scores'].pop(request.sid, None)
-        # game_state['answers'].pop(request.sid, None)
-        # # Also remove from PLAYER_SESSIONS (find and delete)
-        # tokens_to_remove = [tok for tok, data in PLAYER_SESSIONS.items() if data['sid'] == request.sid]
-        # for tok in tokens_to_remove:
-        #     del PLAYER_SESSIONS[tok]
         # # Save state after player leaves
         if game_state['host_sid']:
             emit('player_left', {'nickname': nickname}, to=game_state['host_sid'])
@@ -383,80 +328,8 @@ def on_disconnect():
 # Modify on_host_join socket event to check admin authentication
 @socketio.on('host_join')
 def on_host_join():
-    # Require host authentication (separate from admin)
-    if not session.get('host_logged_in'):
-        emit('admin_error', {'message': 'Você precisa estar logado como anfitrião para controlar o jogo.'}, to=request.sid)
-        return    # If there is already a host, ignore
-    
-    if game_state['host_sid'] is not None:
-        emit('admin_error', {'message': 'Já existe um anfitrião conectado.'}, to=request.sid)
-        return
-    
-    # Check if there is an existing game in progress (players present)
-    if game_state['players']:
-        # Resume existing game
-        game_state['host_sid'] = request.sid
-        print(f"Anfitrião reconectou e retomou o jogo: {request.sid}")
-        
-        # Notify host of current state
-        emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
-        # Tell host the current question index and game state
-        emit('resume_host_state', {
-            'current_question': game_state['current_question'],
-            'state': game_state['state'],
-            'total_players': len(game_state['players']),
-            'answered_count': len(game_state['answers'])
-        }, to=game_state['host_sid'])
-        
-        # Broadcast to all players that host is back
-        emit('host_reconnected', {'message': 'O apresentador reconectou. O jogo vai continuar.'}, broadcast=True)
-        
-        # If game was in QUESTION state, resend the current question to all players
-        if game_state['state'] == STATE_QUESTION and game_state['current_question'] >= 0 and QUIZ_DATA:
-            q_index = game_state['current_question']
-            question_data = QUIZ_DATA['questions'][q_index]
-            figure = question_data['figure']
-            chart_path = ""
-            if figure != "none":
-                chart_path = f"{UPLOAD_FOLDER}/{figure}"
-            payload = {
-                'text': question_data['text'],
-                'options': question_data['options'],
-                'question_index': q_index,
-                'total_questions': len(QUIZ_DATA['questions']),
-                'chart_path': chart_path
-            }
-            emit('show_question', payload, broadcast=True)
-        # If game was in ANSWER state, resend results
-        elif game_state['state'] == STATE_ANSWER and game_state['current_question'] >= 0 and QUIZ_DATA:
-            q_index = game_state['current_question']
-            question_data = QUIZ_DATA['questions'][q_index]
-            correct_option_index = question_data['correct_option']
-            correct_option_text = question_data['options'][correct_option_index]
-            answer_distribution = [0] * len(question_data['options'])
-            for ans in game_state['answers'].values():
-                try:
-                    answer_distribution[int(ans)] += 1
-                except:
-                    pass
-            chart_path = f"static/graphs/q{q_index + 1}_results.png"
-            if not os.path.exists(chart_path):
-                chart_path = save_answer_distribution_chart(answer_distribution, question_data, q_index)
-            payload = {
-                'correct_option': correct_option_index,
-                'correct_option_text': chr(ord('A')+correct_option_index) + ') ' + correct_option_text,
-                'scores': game_state['scores'],
-                'players': game_state['players'],
-                'answer_distribution': answer_distribution,
-                'chart_path': chart_path
-            }
-            emit('show_results', payload, broadcast=True)
-            emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
-    else:
-        # No game in progress – fresh host join
-        game_state['host_sid'] = request.sid
-        print(f"Novo anfitrião se juntou: {request.sid}")
-        emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
+    response = connections.connect_host(game_state, QUIZ_DATA)
+
 # ### INÍCIO EVENTOS ADMIN (Modificados) ###
 @socketio.on('admin_join')
 def on_admin_join():
@@ -571,7 +444,7 @@ def on_player_join(data):
 
     # Criar token de sessão
     session_token = generate_session_token()
-    PLAYER_SESSIONS[session_token] = {
+    game_state['PLAYER_SESSIONS'][session_token] = {
         'sid': request.sid,
         'nickname': canonical_name
     }
@@ -585,7 +458,7 @@ def on_player_join(data):
             'session_token': session_token
         },
         to=request.sid)
-    save_full_state()
+    save_full_state(game_state, QUIZ_DATA)
 
 
 @socketio.on('start_game')
@@ -594,8 +467,8 @@ def on_start_game(data):
         return
     quiz = data.get('quiz-name')
     global QUIZ_DATA
-    QUIZ_DATA = load_quiz_data(quiz)
-    save_full_state()
+    QUIZ_DATA = files_handler.load_quiz_data(quiz)
+    save_full_state(game_state, QUIZ_DATA)
     print("Iniciando o jogo!")
     advance_question()
 
@@ -605,12 +478,29 @@ def on_next_question():
         return
     advance_question()
 
+def reading_timer():
+    print("called reading_timer()")
+    socketio.start_background_task(_timeout_reading_timer)
+    pass
+
+def _timeout_reading_timer():
+    socketio.sleep(10)
+    game_state['question_start_time'] = time.time()
+    
+    save_full_state(game_state, QUIZ_DATA)
+
+    current_host = game_state.get('host_sid')
+    print("Timeout")
+    if current_host:
+        socketio.emit('answer_allowed')
+
 def advance_question():
     global game_state
     game_state['answers'] = {}
     game_state['answers_time'] = {}          # reset for new question
     game_state['current_question'] += 1
-    game_state['state'] = STATE_QUESTION
+    game_state['state'] = constants.STATE_QUESTION
+    game_state['question_start_time'] = None
     q_index = game_state['current_question']
 
     if q_index >= len(QUIZ_DATA['questions']):
@@ -624,8 +514,8 @@ def advance_question():
         leaderboard.sort(key=lambda x: x['score'], reverse=True)
         export_scores_to_csv(game_state['scores'], game_state['competition_scores'], game_state['players'])
         emit('game_over', leaderboard, broadcast=True)
-        game_state = clear_game_state()
-        game_state['state'] = STATE_GAMEOVER
+        game_state = game_handler.clear_game_state()
+        game_state['state'] = constants.STATE_GAMEOVER
         if os.path.exists(GAME_SAVE_FILE):
             os.remove(GAME_SAVE_FILE)
             print("Saved game file deleted by host.")
@@ -634,7 +524,7 @@ def advance_question():
         figure = question_data['figure']
         chart_path = ""
         if figure != "none":
-            chart_path = f"{UPLOAD_FOLDER}/{figure}"
+            chart_path = f"{constants.UPLOAD_FOLDER}/{figure}"
         payload = {
             'text': question_data['text'],
             'options': question_data['options'],
@@ -642,14 +532,15 @@ def advance_question():
             'total_questions': len(QUIZ_DATA['questions']),
             'chart_path': chart_path
         }
-        game_state['question_start_time'] = time.time()
+        
         emit('show_question', payload, broadcast=True)
         if game_state['host_sid']:
             emit('update_answer_count', {
                 'answered': 0, 
                 'total': len(game_state['players'])
             }, to=game_state['host_sid'])
-        save_full_state()
+        reading_timer()
+        save_full_state(game_state, QUIZ_DATA)
 
 @socketio.on('submit_answer')
 def on_submit_answer(data):
@@ -676,110 +567,11 @@ def on_submit_answer(data):
             'answered': len(game_state['answers']), 
             'total': len(game_state['players'])
         }, to=game_state['host_sid'])
-    save_full_state()
+    save_full_state(game_state, QUIZ_DATA)
 
-def save_answer_distribution_chart(answer_distribution, question_data, question_index):
-    os.makedirs('static/graphs', exist_ok=True)
-    labels = ['A', 'B', 'C', 'D'][:len(answer_distribution)]
-    values = answer_distribution
-    plt.figure(figsize=(5,3))
-    plt.bar(labels, values, color=['#007bff', '#28a745', '#ffc107', '#dc3545'][:len(values)])
-    plt.title(f"Distribuição das respostas - Pergunta {question_index + 1}")
-    plt.xlabel("Alternativas")
-    plt.ylabel("Número de respostas")
-    plt.tight_layout()
-    filename = f"static/graphs/q{question_index + 1}_results.png"
-    plt.savefig(filename)
-    plt.close()
-    return filename
 
-# @socketio.on('show_results')
-# def on_show_results():
-#     if request.sid != game_state['host_sid']:
-#         return
-#     q_index = game_state['current_question']
-#     if q_index < 0 or q_index >= len(QUIZ_DATA['questions']):
-#         return
-#     question_data = QUIZ_DATA['questions'][q_index]
-#     correct_option_index = question_data['correct_option']
-#     correct_option_text = question_data['options'][correct_option_index] 
-#     answer_distribution = [0] * len(question_data['options'])
-#     for ans in game_state['answers'].values():
-#         try:
-#             answer_distribution[int(ans)] += 1
-#         except (ValueError, TypeError, IndexError):
-#             pass
 
-#     for sid, answer in game_state['answers'].items():
-#         try:
-#             if int(answer) == int(correct_option_index):
-#                 game_state['scores'][sid] = game_state['scores'].get(sid, 0) + 10
-#         except:
-#             pass
-#     chart_path = save_answer_distribution_chart(answer_distribution, question_data,q_index)
-#     payload = {
-#     'correct_option': correct_option_index,
-#     'correct_option_text': chr(ord('A')+correct_option_index) + ') ' + correct_option_text,
-#     'scores': game_state['scores'],
-#     'players': game_state['players'],
-#     'answer_distribution': answer_distribution,
-#     'chart_path': chart_path
-#     }
-#     emit('show_results', payload, broadcast=True)
-#     print("Mostrando resultados.")
-#     game_state['state'] = STATE_ANSWER
-#     save_full_state()
 
-def save_combined_results_chart(answer_distribution, question_data, question_index, top3):
-    """Generate a single figure with two subplots:
-       - Left: answer distribution bar chart
-       - Right: podium (top 3 competition points)
-       Returns the file path to the saved image.
-    """
-    os.makedirs('static/graphs', exist_ok=True)
-    filename = f"static/graphs/q{question_index + 1}_results.png"
-    
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 3))
-    
-    # ---- Subplot 1: Answer distribution bar chart ----
-    labels = ['A', 'B', 'C', 'D'][:len(answer_distribution)]
-    values = answer_distribution
-    colors = ['#007bff', '#28a745', '#ffc107', '#dc3545'][:len(values)]
-    ax1.bar(labels, values, color=colors)
-    ax1.set_title(f"Distribuição das respostas\nPergunta {question_index + 1}")
-    ax1.set_xlabel("Alternativas")
-    ax1.set_ylabel("Número de respostas")
-    
-    # ---- Subplot 2: Podium ----
-    ax2.set_xlim(0, 3)
-    ax2.set_ylim(0, 1)
-    ax2.axis('off')
-    
-    cores_podium = ['#FFD966', '#C0C0C0', '#CD7F32']
-    largura = 0.9
-    altura = 0.7
-    y_base = 0.15
-    
-    for i, (nome, pontuacao) in enumerate(top3):
-        # Handle spaces in names: replace with newline
-        nome_display = nome.replace(' ', '\n')
-        x = i + 0.05
-        rect = patches.Rectangle(
-            (x, y_base), largura, altura,
-            linewidth=1, edgecolor='black', facecolor=cores_podium[i], alpha=0.8
-        )
-        ax2.add_patch(rect)
-        ax2.text(
-            x + largura/2, y_base + altura/2,
-            f"{nome_display}\n{pontuacao}",
-            ha='center', va='center', fontsize=15, fontweight='bold'
-        )
-    ax2.set_title("Pódio")
-    
-    plt.tight_layout()
-    plt.savefig(filename)
-    plt.close()
-    return filename
 
 @socketio.on('show_results')
 def on_show_results():
@@ -806,14 +598,15 @@ def on_show_results():
         except:
             pass
 
-    # Competition scoring: round(200 * 2^(-t/5)) for correct answers
     question_competition_points = {}
+    def sinc(t):
+        return np.sin(np.pi*t+1e-5)/(np.pi*t+1e-5)
     for sid, answer in game_state['answers'].items():
         try:
             if int(answer) == int(correct_option_index):
                 t = game_state['answers_time'].get(sid)
                 if t is not None and t >= 0:
-                    comp_points = round(500 * (2 ** (-t / 5.0)))
+                    comp_points = int(200*sinc(t/60)**4)
                 else:
                     comp_points = 0
                 game_state['competition_scores'][sid] = game_state['competition_scores'].get(sid, 0) + comp_points
@@ -825,7 +618,7 @@ def on_show_results():
     top3 = sorted(question_competition_points.items(), key=lambda x: x[1], reverse=True)[:3]
 
     # Generate combined chart (bar chart + podium)
-    combined_chart_path = save_combined_results_chart(answer_distribution, question_data, q_index, top3)
+    combined_chart_path = chart.save_combined_results_chart(answer_distribution, question_data, q_index, top3)
 
     payload = {
         'correct_option': correct_option_index,
@@ -838,8 +631,8 @@ def on_show_results():
     }
     emit('show_results', payload, broadcast=True)
     print("Mostrando resultados com gráfico combinado.")
-    game_state['state'] = STATE_ANSWER
-    save_full_state()
+    game_state['state'] = constants.STATE_ANSWER
+    save_full_state(game_state, QUIZ_DATA)
 
 @socketio.on('force_end_quiz')
 def on_force_end_quiz():
@@ -857,37 +650,14 @@ def on_force_end_quiz():
     export_scores_to_csv(game_state['scores'], game_state['competition_scores'], game_state['players'])
     emit('game_over', leaderboard, broadcast=True)
     
-    game_state = clear_game_state()
-    game_state['state'] = STATE_GAMEOVER
+    game_state = game_handler.clear_game_state()
+    game_state['state'] = constants.STATE_GAMEOVER
     if os.path.exists(GAME_SAVE_FILE):
         os.remove(GAME_SAVE_FILE)
         print("Saved game file deleted by host.")
 
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def get_quiz_list():
-    """Returns list of quiz names (without .json extension)"""
-    quizzes = []
-    for f in os.listdir(QUIZZES_FOLDER):
-        if f.endswith('.json'):
-            quizzes.append(f[:-5])
-    return quizzes
-
-def load_quiz(quiz_name):
-    """Loads a quiz dict from quizzes/quiz_name.json"""
-    path = os.path.join(QUIZZES_FOLDER, f'{quiz_name}.json')
-    if not os.path.exists(path):
-        return None
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-def save_quiz(quiz_name, data):
-    """Saves quiz dict to quizzes/quiz_name.json"""
-    path = os.path.join(QUIZZES_FOLDER, f'{quiz_name}.json')
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
 
 # -------------------- Routes --------------------
 @app.route('/editor')
@@ -899,12 +669,12 @@ def editor_view():
 @app.route('/api/quizzes', methods=['GET'])
 def api_list_quizzes():
     """Return list of available quiz names"""
-    return jsonify(get_quiz_list())
+    return jsonify(files_handler.get_quiz_list())
 
 @app.route('/api/quiz/<quiz_name>', methods=['GET'])
 def api_get_quiz(quiz_name):
     """Return a single quiz JSON"""
-    quiz = load_quiz(quiz_name)
+    quiz = files_handler.load_quiz(quiz_name)
     if quiz is None:
         return jsonify({'error': 'Quiz not found'}), 404
     return jsonify(quiz)
@@ -917,13 +687,13 @@ def api_save_quiz(quiz_name):
         return jsonify({'error': 'Invalid quiz data'}), 400
     
     # Optional: validate structure
-    save_quiz(quiz_name, data)
+    files_handler.save_quiz(quiz_name, data)
     return jsonify({'message': 'Quiz saved successfully'})
 
 @app.route('/api/quiz/<quiz_name>', methods=['DELETE'])
 def api_delete_quiz(quiz_name):
     """Delete a quiz file"""
-    path = os.path.join(QUIZZES_FOLDER, f'{quiz_name}.json')
+    path = os.path.join(constants.QUIZZES_FOLDER, f'{quiz_name}.json')
     if not os.path.exists(path):
         return jsonify({'error': 'Quiz not found'}), 404
     os.remove(path)
@@ -937,22 +707,22 @@ def api_upload_image():
     file = request.files['image']
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
-    if not allowed_file(file.filename):
+    if not files_handler.allowed_file(file.filename):
         return jsonify({'error': 'File type not allowed'}), 400
 
     # Generate unique filename: time_hash + extension
     ext = file.filename.rsplit('.', 1)[1].lower()
     unique_name = hashlib.md5(f"{time.time()}{file.filename}".encode()).hexdigest()
     filename = f"{unique_name}.{ext}"
-    file.save(os.path.join(UPLOAD_FOLDER, filename))
+    file.save(os.path.join(constants.UPLOAD_FOLDER, filename))
     
     # Return the path that can be stored in the quiz JSON
-    return jsonify({'filename': filename, 'url': f'{UPLOAD_FOLDER}/{filename}'})
+    return jsonify({'filename': filename, 'url': f'{constants.UPLOAD_FOLDER}/{filename}'})
 
 # Optional: serve uploaded images (if not already served by static folder)
 @app.route('/static/quiz-figures/<filename>')
 def uploaded_file(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
+    return send_from_directory(constants.UPLOAD_FOLDER, filename)
 
 from flask import send_file
 import zipfile
@@ -975,7 +745,7 @@ def api_export_quiz():
         for idx, q in enumerate(data['questions']):
             fig = q.get('figure')
             if fig and fig != 'none':
-                fig_path = os.path.join(UPLOAD_FOLDER, fig)
+                fig_path = os.path.join(constants.UPLOAD_FOLDER, fig)
                 if os.path.exists(fig_path):
                     zip_file.write(fig_path, arcname=f'figures/{fig}')
                 else:
@@ -1029,7 +799,7 @@ def api_import_quiz():
                     ext = fig.rsplit('.', 1)[1].lower() if '.' in fig else 'png'
                     novo_nome = hashlib.md5(f"{time.time()}{fig}".encode()).hexdigest()
                     novo_nome = f"{novo_nome}.{ext}"
-                    caminho_imagem = os.path.join(UPLOAD_FOLDER, novo_nome)
+                    caminho_imagem = os.path.join(constants.UPLOAD_FOLDER, novo_nome)
                     with open(caminho_imagem, 'wb') as img_f:
                         img_f.write(figure_files[fig])
                     q['figure'] = novo_nome
@@ -1041,12 +811,12 @@ def api_import_quiz():
             base_name = quiz_data['title'].replace('/', '_').replace('\\', '_')
             quiz_name = base_name
             contador = 1
-            while os.path.exists(os.path.join(QUIZZES_FOLDER, f'{quiz_name}.json')):
+            while os.path.exists(os.path.join(constants.QUIZZES_FOLDER, f'{quiz_name}.json')):
                 quiz_name = f"{base_name}_{contador}"
                 contador += 1
 
             # Salva o quiz
-            save_quiz(quiz_name, quiz_data)
+            files_handler.save_quiz(quiz_name, quiz_data)
 
             return jsonify({
                 'success': True,
@@ -1062,29 +832,8 @@ def api_import_quiz():
 # ========== ADDITIONS FOR PERSISTENT STATE & HOST RECONNECTION ==========
 GAME_SAVE_FILE = '.private/game_save.json'
 
-def save_full_state():
-    """Save current game state and player sessions to a JSON file."""
-    state = {
-        'game_state': {
-            'host_sid': game_state['host_sid'],
-            'players': game_state['players'],
-            'current_question': game_state['current_question'],
-            'answers': game_state['answers'],
-            'scores': game_state['scores'],
-            'competition_scores': game_state['competition_scores'],   # NEW
-            'state': game_state['state'],
-            'question_start_time': game_state['question_start_time'], # NEW
-            'answers_time': game_state['answers_time']               # NEW
-        },
-        'player_sessions': PLAYER_SESSIONS,
-        'quiz_data': QUIZ_DATA  # current quiz being played
-    }
-    try:
-        with open(GAME_SAVE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(state, f, indent=2, ensure_ascii=False)
-        print("✅ Game state saved to file.")
-    except Exception as e:
-        print(f"❌ Failed to save game state: {e}")
+def save_full_state(game_state, QUIZ_DATA):
+    game_handler.save_full_state(game_state, QUIZ_DATA)
 
 def load_full_state():
     """Load saved state from file, returns None if file doesn't exist."""
@@ -1110,8 +859,8 @@ def restore_full_state():
             game_state['question_start_time'] = None
         if 'answers_time' not in game_state:
             game_state['answers_time'] = {}
-        global PLAYER_SESSIONS, QUIZ_DATA
-        PLAYER_SESSIONS = state['player_sessions']
+        global QUIZ_DATA
+        game_state['PLAYER_SESSIONS'] = state['game_state']['PLAYER_SESSIONS']
         QUIZ_DATA = state['quiz_data']
         print("--- Game state restored from backup ---")
         return True
@@ -1138,13 +887,13 @@ def on_clear_saved_game():
         'current_question': -1,
         'answers': {},
         'scores': {},
-        'state': STATE_LOBBY,
+        'state': constants.STATE_LOBBY,
         'competition_scores': {},
         'question_start_time': None,
-        'answers_time': {}
+        'answers_time': {},
+        'PLAYER_SESSIONS': {}
     })
-    global PLAYER_SESSIONS, QUIZ_DATA
-    PLAYER_SESSIONS = {}
+    global QUIZ_DATA
     QUIZ_DATA = None
     emit('game_reset', broadcast=True)
     emit('admin_error', {'message': 'Jogo foi resetado completamente.'}, to=request.sid)
