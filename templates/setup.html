@@ -1,0 +1,36 @@
+{% extends "layout.html" %}
+{% block title %}Configuração inicial{% endblock %}
+
+{% block content %}
+<div style="max-width: 460px; margin: 40px auto; padding: 20px;">
+    <h1>Configuração inicial</h1>
+
+    <p>
+        Defina a senha do professor. Ela será pedida para entrar na tela do
+        <strong>apresentador</strong> e no painel de <strong>administração</strong>.
+    </p>
+
+    {% if error %}
+    <p style="color: #dc3545; font-weight: bold;">{{ error }}</p>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('setup') }}">
+        <label for="password">Senha</label><br>
+        <input type="password" id="password" name="password" minlength="4"
+               placeholder="Mínimo de 4 caracteres" required autofocus
+               style="font-size: 18px; padding: 10px; border-radius: 5px; border: 1px solid #ccc; width: 100%;">
+        <br><br>
+        <label for="confirm">Repita a senha</label><br>
+        <input type="password" id="confirm" name="confirm" minlength="4"
+               placeholder="Repita a senha" required
+               style="font-size: 18px; padding: 10px; border-radius: 5px; border: 1px solid #ccc; width: 100%;">
+        <br><br>
+        <button type="submit">Salvar e entrar</button>
+    </form>
+
+    <p style="color: #6c757d; font-size: 14px; margin-top: 24px;">
+        A senha é gravada no servidor, não na linha de comando. Para trocá-la
+        depois, apague o arquivo <code>.private/.secret</code> e reinicie.
+    </p>
+</div>
+{% endblock %}

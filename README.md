@@ -22,9 +22,9 @@ Depois, inicie o servidor:
 python app.py
 ```
 
-Na **primeira execução**, o terminal pede duas senhas: uma de uso interno
-(**FLASK**) e a senha do professor (**ADMIN**). Guarde a segunda — ela será
-pedida para entrar na administração e na tela do apresentador.
+Na **primeira execução**, o navegador abre automaticamente na tela de
+**configuração inicial**, onde você define a senha do professor. Se ele não
+abrir, acesse `http://localhost:5000/setup`. Nada é digitado no terminal.
 
 Ao iniciar, o terminal mostra os endereços a usar:
 
@@ -48,17 +48,16 @@ no macOS, o Docker Desktop já vem com tudo.
 Na pasta do projeto, execute:
 
 ```sh
-ADMIN_PASSWORD=escolha-uma-senha docker compose up --build
+docker compose up --build
 ```
 
-Na primeira vez ele baixa e monta tudo (leva alguns minutos). Depois abra:
+Na primeira vez ele baixa e monta tudo (leva alguns minutos). Depois abra
+`http://localhost:5000/setup` e defina a senha do professor — não é preciso
+digitar nada no terminal. Em seguida:
 
 - **Apresentador:** `http://localhost:5000/host`
 - **Administração:** `http://localhost:5000/admin`
 - **Alunos:** o IP da sua máquina na rede local (aparece no terminal)
-
-A senha de `ADMIN_PASSWORD` serve para o apresentador e para a administração.
-Ela só é usada na **primeira execução**, quando as senhas são criadas.
 
 **Para parar:** `Ctrl+C`. Para subir de novo depois: `docker compose up -d`.
 Para encerrar de vez: `docker compose down`.
@@ -191,14 +190,35 @@ pronto para levar as notas de participação para a planilha.
 - **Os alunos não abrem o endereço.** Todos precisam estar na mesma rede do seu
   computador, e o aluno deve usar o IP que aparece no terminal (nunca
   `localhost`).
-- **Esqueci a senha do professor.** Apague o arquivo `.private/.secret` e inicie
-  o servidor de novo para criar outras senhas. No Docker, apague o arquivo e
-  rode `ADMIN_PASSWORD=nova-senha docker compose up --build`.
+- **Esqueci a senha do professor.** Apague o arquivo `.private/.secret` e
+  reinicie: a tela de configuração inicial aparece de novo. No Docker, apague o
+  arquivo e rode `docker compose up --build`.
 - **Quero recomeçar uma partida.** Use o botão **Finalizar Quiz** na tela do
   apresentador e inicie um novo jogo.
 - **As fórmulas aparecem como texto (`$x[n]$`).** O MathJax não carregou — em
   geral é falta de internet. Baixe a cópia local indicada em
   *Escrever fórmulas matemáticas*.
+
+## Onde ficam os logs
+
+Tudo o que acontece no servidor (conexões, respostas, erros) aparece no terminal
+e também fica gravado em **`logs/server.log`**. Quando o arquivo passa de 2 MB,
+ele é rotacionado (`server.log.1`, `server.log.2`, …) e os 5 mais recentes são
+mantidos.
+
+No Docker, a pasta `logs/` fica no seu computador, ao lado do projeto.
+
+Para acompanhar em tempo real:
+
+```sh
+tail -f logs/server.log
+```
+
+Para registrar também mensagens detalhadas (útil ao investigar um problema):
+
+```sh
+QUIZ_LOG_LEVEL=DEBUG python app.py
+```
 
 ## Gerar a prova impressa (opcional)
 

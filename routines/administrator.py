@@ -5,11 +5,16 @@ Responsável por carregar/salvar `.private/users.json` (dicionário
 """
 
 import json
+import logging
 
 from flask import request, session
 from flask_socketio import emit
 
+from routines import logger  # noqa: F401  (configura o console + arquivo)
+
 USERS_FILE = '.private/users.json'
+
+log = logging.getLogger(__name__)
 
 
 def load_users(filename=USERS_FILE):
@@ -18,18 +23,18 @@ def load_users(filename=USERS_FILE):
         with open(filename, 'r', encoding='utf-8') as f:
             data = json.load(f)
             if not isinstance(data, list) or not all(isinstance(s, str) for s in data):
-                print(f"Aviso: {filename} mal formatado. Tratando como lista vazia.")
+                log.warning(f"Aviso: {filename} mal formatado. Tratando como lista vazia.")
                 return {}
 
             # Cria um dicionário {nome_minusculo: NomeOriginal}
             return {user.lower(): user for user in data}
 
     except FileNotFoundError:
-        print(f"Aviso: {filename} não encontrado. Criando um novo.")
+        log.warning(f"Aviso: {filename} não encontrado. Criando um novo.")
         save_users({})
         return {}
     except json.JSONDecodeError:
-        print(f"Aviso: {filename} inválido. Tratando como lista vazia.")
+        log.warning(f"Aviso: {filename} inválido. Tratando como lista vazia.")
         return {}
 
 
@@ -42,7 +47,7 @@ def save_users(users_dict, filename=USERS_FILE):
 
 # Estado em memória: {nome_minusculo: NomeOriginal}
 REGISTERED_USERS = load_users()
-print(f"--- {len(REGISTERED_USERS)} usuários carregados de '{USERS_FILE}' ---")
+log.info(f"--- {len(REGISTERED_USERS)} usuários carregados de '{USERS_FILE}' ---")
 
 
 def is_registered(nickname):
@@ -63,7 +68,7 @@ def admin_join():
     if not session.get('admin_logged_in'):
         return
 
-    print(f"Admin se conectou: {request.sid}")
+    log.info(f"Admin se conectou: {request.sid}")
     emit('update_user_list', sorted(REGISTERED_USERS.values()), to=request.sid)
 
 
@@ -78,7 +83,7 @@ def add_user(data):
     if nickname and nickname_lower not in REGISTERED_USERS:
         REGISTERED_USERS[nickname_lower] = nickname
         save_users(REGISTERED_USERS)
-        print(f"Admin adicionou usuário: {nickname}")
+        log.info(f"Admin adicionou usuário: {nickname}")
         _broadcast_user_list()
     elif nickname_lower in REGISTERED_USERS:
         emit('admin_error', {'message': f'O nome "{nickname}" (ou variação) já existe.'}, to=request.sid)
@@ -95,7 +100,7 @@ def remove_user(data):
     if nickname_lower in REGISTERED_USERS:
         del REGISTERED_USERS[nickname_lower]
         save_users(REGISTERED_USERS)
-        print(f"Admin removeu usuário: {nickname}")
+        log.info(f"Admin removeu usuário: {nickname}")
         _broadcast_user_list()
 
 
@@ -126,5 +131,5 @@ def edit_user(data):
     REGISTERED_USERS[new_lower] = new_nickname
     save_users(REGISTERED_USERS)
 
-    print(f"Admin editou usuário: de '{old_nickname}' para '{new_nickname}'")
+    log.info(f"Admin editou usuário: de '{old_nickname}' para '{new_nickname}'")
     _broadcast_user_list()

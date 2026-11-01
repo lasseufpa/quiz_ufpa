@@ -6,6 +6,7 @@ devem ser chamadas de dentro de um handler de socket.
 """
 
 import csv
+import logging
 import os
 import time
 from datetime import datetime
@@ -14,9 +15,12 @@ import numpy as np
 from flask import request
 from flask_socketio import emit
 
+from routines import logger  # noqa: F401  (configura o console + arquivo)
 from routines import chart
 from routines import constants
 from routines import game_state_handler as game_handler
+
+log = logging.getLogger(__name__)
 
 
 # -------------------- Exportação de resultados --------------------
@@ -59,7 +63,7 @@ def export_scores_to_csv(scores, competition_scores, players, quiz_data=None):
                 competition_scores.get(sid, 0)
             ])
 
-    print(f"✅ Resultados exportados para {filepath}")
+    log.info(f"✅ Resultados exportados para {filepath}")
 
 
 # -------------------- Estado da partida --------------------
@@ -71,7 +75,7 @@ def reset_game_state(game_state):
 
     if os.path.exists(constants.GAME_SAVE_FILE):
         os.remove(constants.GAME_SAVE_FILE)
-        print("Saved game file deleted by host.")
+        log.info("Saved game file deleted by host.")
 
 
 def _build_leaderboard(game_state):
@@ -86,7 +90,7 @@ def _build_leaderboard(game_state):
 
 def finish_game(game_state, quiz_data):
     """Encerra o quiz: exporta o CSV, anuncia o placar e reseta o estado."""
-    print("Fim do quiz.")
+    log.info("Fim do quiz.")
     leaderboard = _build_leaderboard(game_state)
     export_scores_to_csv(
         game_state['scores'],
@@ -101,18 +105,28 @@ def finish_game(game_state, quiz_data):
 # -------------------- Fase de leitura --------------------
 def reading_timer(socketio, game_state, quiz_data):
     """Agenda a liberação das respostas após READING_DURATION segundos."""
-    print("called reading_timer()")
-    socketio.start_background_task(_timeout_reading_timer, socketio, game_state, quiz_data)
+    log.debug("called reading_timer()")
+    token = game_state.get('question_token', 0)
+    socketio.start_background_task(
+        _timeout_reading_timer, socketio, game_state, quiz_data, token
+    )
 
 
-def _timeout_reading_timer(socketio, game_state, quiz_data):
+def _timeout_reading_timer(socketio, game_state, quiz_data, token):
     socketio.sleep(constants.READING_DURATION)
+
+    # Ignora o timer se a pergunta já mudou ou se os resultados já apareceram.
+    if (game_state.get('question_token', 0) != token
+            or game_state['state'] != constants.STATE_QUESTION):
+        log.debug("Timer de leitura descartado (pergunta já mudou).")
+        return
+
     game_state['question_start_time'] = time.time()
 
     game_handler.save_full_state(game_state, quiz_data)
 
     current_host = game_state.get('host_sid')
-    print("Timeout")
+    log.debug("Timeout")
     if current_host:
         socketio.emit('answer_allowed')
 
@@ -120,11 +134,18 @@ def _timeout_reading_timer(socketio, game_state, quiz_data):
 # -------------------- Fluxo de perguntas --------------------
 def advance_question(socketio, game_state, quiz_data):
     """Avança para a próxima pergunta (ou encerra o quiz, se acabaram)."""
+    # Bloqueia só durante a pergunta: evita pular questões com clique duplo,
+    # mas permite iniciar do lobby (ou de um jogo já encerrado).
+    if game_state['state'] == constants.STATE_QUESTION:
+        log.warning("advance_question ignorado: a pergunta atual ainda está aberta")
+        return
+
     game_state['answers'] = {}
     game_state['answers_time'] = {}          # reset for new question
     game_state['current_question'] += 1
     game_state['state'] = constants.STATE_QUESTION
     game_state['question_start_time'] = None
+    game_state['question_token'] = game_state.get('question_token', 0) + 1
     q_index = game_state['current_question']
 
     if q_index >= len(quiz_data['questions']):
@@ -148,7 +169,7 @@ def advance_question(socketio, game_state, quiz_data):
     if game_state['host_sid']:
         emit('update_answer_count', {
             'answered': 0,
-            'total': len(game_state['players'])
+            'total': game_handler.online_count(game_state)
         }, to=game_state['host_sid'])
     reading_timer(socketio, game_state, quiz_data)
     game_handler.save_full_state(game_state, quiz_data)
@@ -158,6 +179,8 @@ def advance_question(socketio, game_state, quiz_data):
 def submit_answer(game_state, quiz_data, data):
     """Registra a resposta de um jogador e o tempo gasto."""
     if request.sid not in game_state['players']:
+        return
+    if game_state['state'] != constants.STATE_QUESTION:
         return
     if request.sid in game_state['answers']:
         emit('answer_received', to=request.sid)
@@ -173,14 +196,15 @@ def submit_answer(game_state, quiz_data, data):
     else:
         game_state['answers_time'][request.sid] = None
 
-    print(f"Jogador {game_state['players'][request.sid]} respondeu: {option_index} em {game_state['answers_time'][request.sid]}s")
+    log.info(f"Jogador {game_state['players'][request.sid]} respondeu: {option_index} em {game_state['answers_time'][request.sid]}s")
     emit('answer_received', to=request.sid)
     if game_state['host_sid']:
         emit('update_answer_count', {
             'answered': len(game_state['answers']),
-            'total': len(game_state['players'])
+            'total': game_handler.online_count(game_state)
         }, to=game_state['host_sid'])
-    game_handler.save_full_state(game_state, quiz_data)
+    # force=False: grava no máximo 1x por segundo (evita N escritas por pergunta)
+    game_handler.save_full_state(game_state, quiz_data, force=False)
 
 
 # -------------------- Pontuação --------------------
@@ -228,6 +252,10 @@ def show_results(game_state, quiz_data):
     """Calcula as pontuações, gera o gráfico (distribuição + pódio) e revela os resultados."""
     if request.sid != game_state['host_sid']:
         return
+    # Idempotência: clique duplo não pode somar a pontuação duas vezes
+    if game_state['state'] != constants.STATE_QUESTION:
+        log.warning("show_results ignorado no estado %s", game_state['state'])
+        return
     q_index = game_state['current_question']
     if q_index < 0 or q_index >= len(quiz_data['questions']):
         return
@@ -260,8 +288,10 @@ def show_results(game_state, quiz_data):
         'chart_path': combined_chart_path,
     }
     emit('show_results', payload, broadcast=True)
-    print("Mostrando resultados com gráfico combinado.")
+    log.info("Mostrando resultados com gráfico combinado.")
     game_state['state'] = constants.STATE_ANSWER
+    # Invalida o timer de leitura pendente, se ainda houver
+    game_state['question_token'] = game_state.get('question_token', 0) + 1
     game_handler.save_full_state(game_state, quiz_data)
 
 
@@ -269,5 +299,7 @@ def force_end_quiz(game_state, quiz_data):
     """Encerra o quiz antecipadamente, a pedido do host."""
     if request.sid != game_state['host_sid']:
         return
-    print("Quiz finalizado forçadamente pelo host")
+    if game_state['state'] == constants.STATE_GAMEOVER:
+        return
+    log.info("Quiz finalizado forçadamente pelo host")
     finish_game(game_state, quiz_data)

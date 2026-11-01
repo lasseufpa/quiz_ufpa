@@ -1,8 +1,9 @@
 # Sobe o quiz em container:
 #
-#   ADMIN_PASSWORD=minhaSenha docker compose up --build
+#   docker compose up --build
 #
-# Depois abra http://localhost:5000/host (professor) e
+# Na primeira execução, abra http://localhost:5000/setup e defina a senha
+# do professor. Depois use http://localhost:5000/host (apresentador) e
 # http://localhost:5000/admin (administração).
 # Para parar: Ctrl+C ou "docker compose down".
 
@@ -26,12 +27,11 @@ services:
       # Em container não queremos o auto-reload do modo debug
       FLASK_DEBUG: "0"
 
-      # Senha do professor (também usada no painel de administração).
-      # Só tem efeito na PRIMEIRA execução, quando o .private/.secret é criado.
-      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin}"
+      # Em container não há navegador: a tela de configuração é aberta na mão
+      QUIZ_OPEN_BROWSER: "0"
 
-      # Senha interna do Flask (sessões). Não precisa ser memorizada.
-      FLASK_PASSWORD: "${FLASK_PASSWORD:-flask}"
+      # Nível dos logs: DEBUG, INFO, WARNING ou ERROR (padrão: INFO)
+      QUIZ_LOG_LEVEL: "${QUIZ_LOG_LEVEL:-INFO}"
 
       # Porta do servidor (padrão 5000). Ex.: QUIZ_PORT=8080 docker compose up
       QUIZ_PORT: "${QUIZ_PORT:-5000}"
@@ -44,6 +44,7 @@ services:
       # Tudo o que precisa sobreviver a uma recriação do container
       - ./.private:/app/.private                     # senhas, alunos, partida salva
       - ./scores:/app/scores                         # resultados em CSV
+      - ./logs:/app/logs                             # logs do servidor
       - ./static/quizzes:/app/static/quizzes         # quizzes criados no editor
       - ./static/quiz-figures:/app/static/quiz-figures  # figuras das perguntas
       - ./static/graphs:/app/static/graphs           # gráficos gerados

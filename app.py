@@ -3,14 +3,20 @@ from flask import Flask, render_template, request, session, redirect, url_for, f
 from flask_socketio import SocketIO, emit
 import json
 
+import secrets
 import socket
-import getpass
+import threading
 
 import hashlib
+import logging
 import time
 
+# Importado primeiro para configurar console + arquivo de log antes dos demais
+from routines import logger  # noqa: F401
 from routines import game_state_handler as game_handler
 from routines import files_handler, connections, game_logic, constants, administrator
+
+log = logging.getLogger(__name__)
 
 from flask import send_from_directory
 
@@ -25,38 +31,43 @@ os.makedirs(constants.QUIZZES_FOLDER, exist_ok=True)
 os.makedirs(constants.UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(constants.SECRET_FOLDER, exist_ok=True)
 
-secretpath = Path(__file__).parent /".private" /".secret"
-
-def promptPassword(name):
-    string = getpass.getpass(f'Create {name} password: ')
-    encoded_string = string.encode('utf-8')
-    hash_object = hashlib.sha256(encoded_string)
-    hex_digest = hash_object.hexdigest()
-    return hex_digest
+secretpath = Path(__file__).parent / ".private" / ".secret"
 
 
-if not secretpath.exists():
-    with open(secretpath, 'w+') as file:
-        file.write(''+promptPassword('FLASK') +'\n')
-        file.write(''+promptPassword('ADMIN') +'\n')
-else:
-    with open(secretpath, 'r+') as file:
-        numlines = len(file.readlines())
-        if numlines == 0:
-            file.write(''+promptPassword('FLASK') +'\n')
-            file.write(''+promptPassword('ADMIN') +'\n')
-        elif numlines == 1:
-            file.write(''+promptPassword('ADMIN') +'\n')
-        elif numlines > 2:
-            print("arquivo .secret inválido")
-            exit()
+def _read_secret_file():
+    """Retorna (secret_key, admin_hash), ou (None, None) se não configurado."""
+    try:
+        lines = secretpath.read_text(encoding='utf-8').splitlines()
+    except FileNotFoundError:
+        return None, None
+
+    secret_key = lines[0].strip() if len(lines) > 0 else ''
+    admin_hash = lines[1].strip() if len(lines) > 1 else ''
+    if not secret_key or not admin_hash:
+        return None, None
+    return secret_key, admin_hash
 
 
-        
+def _write_secret_file(secret_key, admin_hash):
+    """Grava `.secret` atomicamente: linha 1 = SECRET_KEY, linha 2 = hash da senha."""
+    secretpath.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = secretpath.with_name('.secret.tmp')
+    tmp_path.write_text(f"{secret_key}\n{admin_hash}\n", encoding='utf-8')
+    os.replace(tmp_path, secretpath)
+
+
+_secret_key, _admin_hash = _read_secret_file()
+
+# Primeira execução: a senha do professor ainda não existe. O SECRET_KEY é
+# gerado automaticamente (não precisa ser memorizado) e a senha é definida na
+# tela /setup, que abre no navegador.
+SETUP_REQUIRED = _admin_hash is None
+if _secret_key is None:
+    _secret_key = secrets.token_hex(32)
+
 app = Flask(__name__)
-with open(secretpath, 'r+') as file:
-    app.config['SECRET_KEY']    = file.readline().strip()
-    ADMIN_PASSWORD              = file.readline().strip()
+app.config['SECRET_KEY'] = _secret_key
+ADMIN_PASSWORD = _admin_hash or ''
 
 socketio = SocketIO(
     app,
@@ -70,6 +81,60 @@ socketio = SocketIO(
 
 
 game_state = game_handler.clear_game_state()
+
+
+@app.after_request
+def log_request(response):
+    """Grava no log cada requisição HTTP (exceto arquivos estáticos)."""
+    if not request.path.startswith('/static/'):
+        log.info(f"{request.method} {request.path} -> {response.status_code}")
+    return response
+
+
+# -------------------- Primeira execução --------------------
+@app.before_request
+def require_initial_setup():
+    """Enquanto a senha do professor não for definida, redireciona para /setup."""
+    if not SETUP_REQUIRED:
+        return None
+    if request.endpoint in ('setup', 'static'):
+        return None
+    if request.path.startswith('/socket.io'):
+        return None
+    return redirect(url_for('setup'))
+
+
+@app.route('/setup', methods=['GET', 'POST'])
+def setup():
+    """Tela de configuração inicial da senha do professor."""
+    global SETUP_REQUIRED, ADMIN_PASSWORD
+
+    if not SETUP_REQUIRED:
+        return redirect(url_for('player_join'))
+
+    error = None
+    if request.method == 'POST':
+        password = (request.form.get('password') or '').strip()
+        confirm = (request.form.get('confirm') or '').strip()
+
+        if len(password) < 4:
+            error = 'A senha precisa ter pelo menos 4 caracteres.'
+        elif password != confirm:
+            error = 'As senhas não conferem.'
+
+        if error is None:
+            admin_hash = hashlib.sha256(password.encode('utf-8')).hexdigest()
+            _write_secret_file(app.config['SECRET_KEY'], admin_hash)
+            ADMIN_PASSWORD = admin_hash
+            SETUP_REQUIRED = False
+            log.info("Senha do professor definida na tela de configuração inicial.")
+            # Já entra como apresentador/admin, para não pedir a senha de novo
+            session['host_logged_in'] = True
+            session['admin_logged_in'] = True
+            return redirect(url_for('host_view'))
+
+    return render_template('setup.html', error=error)
+
 
 def generate_session_token():
     """Gera um token único para a sessão do jogador."""
@@ -116,7 +181,7 @@ def on_restore_session(data):
         nickname = session_data['nickname']
         
         # Verifica se o jogador ainda está no jogo
-        print('verificando reconexão')
+        log.debug('verificando reconexão')
         if old_sid in game_state['players']:
             # Atualiza o SID para o novo
             game_state['players'][new_sid] = game_state['players'].pop(old_sid)
@@ -130,7 +195,11 @@ def on_restore_session(data):
             # se tinha tempo, transfere também
             if old_sid in game_state['answers_time']:
                 game_state['answers_time'][new_sid] = game_state['answers_time'].pop(old_sid)
-            
+
+            # Marca o novo SID como online (o antigo deixa de existir)
+            game_state.setdefault('connected', {}).pop(old_sid, None)
+            game_state['connected'][new_sid] = True
+
             # Atualiza o token com o novo SID
             game_state['PLAYER_SESSIONS'][token]['sid'] = new_sid
             
@@ -149,11 +218,16 @@ def on_restore_session(data):
                 'allow_answer' : allow_answer
             }, to=new_sid)
             
-            # Atualiza o host
-            if game_state['host_sid'] and game_state['state']==constants.STATE_LOBBY:
+            # Atualiza o host (lista e contagem)
+            if game_state['host_sid']:
                 emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
-            
-            print(f"Sessão restaurada para {nickname}. Novo SID: {new_sid}")
+                emit('update_answer_count', {
+                    'answered': len(game_state['answers']),
+                    'total': game_handler.online_count(game_state)
+                }, to=game_state['host_sid'])
+
+            save_full_state(game_state, QUIZ_DATA)
+            log.info(f"Sessão restaurada para {nickname}. Novo SID: {new_sid}")
             return
     
     # Se não encontrou sessão válida
@@ -170,11 +244,11 @@ def host_login():
 
         if password == ADMIN_PASSWORD:
             session['host_logged_in'] = True
-            print("Login de anfitrião bem-sucedido.")
+            log.info("Login de anfitrião bem-sucedido.")
             return redirect(url_for('host_view'))
         else:
             flash('Senha incorreta!', 'error')
-            print("Tentativa de login de anfitrião falhou.")
+            log.warning("Tentativa de login de anfitrião falhou.")
     return render_template('host_login.html')
 
 
@@ -189,11 +263,11 @@ def admin_login():
 
         if password == ADMIN_PASSWORD:
             session['admin_logged_in'] = True
-            print("Login de admin bem-sucedido.")
+            log.info("Login de admin bem-sucedido.")
             return redirect(url_for('admin_view'))  # CHANGED: go to admin page
         else:
             flash('Senha incorreta!', 'error')
-            print("Tentativa de login de admin falhou.")
+            log.warning("Tentativa de login de admin falhou.")
     return render_template('admin_login.html')
 
 @app.route('/admin')
@@ -211,14 +285,14 @@ def admin_logout():
 
 @socketio.on('connect')
 def on_connect():
-    print(f"Cliente conectado: {request.sid}")
+    log.info(f"Cliente conectado: {request.sid}")
 
 @socketio.on('disconnect')
 def on_disconnect():
-    print(f"Cliente desconectado: {request.sid}")
+    log.info(f"Cliente desconectado: {request.sid}")
     
     if request.sid == game_state['host_sid']:
-        print("!!! O ANFITRIÃO DESCONECTOU. Salvando estado e pausando o jogo. !!!")
+        log.warning("!!! O ANFITRIÃO DESCONECTOU. Salvando estado e pausando o jogo. !!!")
         # Save current state before clearing host
         save_full_state(game_state, QUIZ_DATA)
         game_state['host_sid'] = None
@@ -229,11 +303,18 @@ def on_disconnect():
 
     elif request.sid in game_state['players']:
         nickname = game_state['players'].get(request.sid, '??')
-        # # Save state after player leaves
+        # Marca como offline, mas mantém pontos/respostas para quando voltar
+        game_state.setdefault('connected', {})[request.sid] = False
+        save_full_state(game_state, QUIZ_DATA)
+
         if game_state['host_sid']:
             emit('player_left', {'nickname': nickname}, to=game_state['host_sid'])
-            
-        print(f"Jogador {nickname} saiu.")
+            emit('update_answer_count', {
+                'answered': len(game_state['answers']),
+                'total': game_handler.online_count(game_state)
+            }, to=game_state['host_sid'])
+
+        log.info(f"Jogador {nickname} desconectou (segue no jogo como offline).")
 
 
 # Modify on_host_join socket event to check admin authentication
@@ -278,19 +359,41 @@ def on_player_join(data):
 
     if canonical_name is None:
         emit('join_failed', {'reason': 'Usuário não cadastrado. Fale com o administrador.'}, to=request.sid)
-        print(f"Falha no login: Usuário '{nickname}' não cadastrado.")
+        log.warning(f"Falha no login: Usuário '{nickname}' não cadastrado.")
         return
 
-    # Verifica se o nome "correto" já está na lista de valores
-    if canonical_name in game_state['players'].values():
-        emit('join_failed', {'reason': 'Este usuário já está no jogo.'}, to=request.sid)
-        print(f"Falha no login: Usuário '{canonical_name}' já está no jogo.")
-        return
+    # Já existe alguém com esse nome?
+    existing_sid = next(
+        (sid for sid, name in game_state['players'].items() if name == canonical_name),
+        None,
+    )
+    if existing_sid is not None:
+        if game_handler.is_connected(game_state, existing_sid):
+            emit('join_failed', {'reason': 'Este usuário já está no jogo.'}, to=request.sid)
+            log.warning(f"Falha no login: Usuário '{canonical_name}' já está no jogo.")
+            return
+
+        # O jogador havia saído: reassume o lugar, mantendo pontos e respostas
+        log.info(f"Jogador {canonical_name} reassumiu o lugar (estava offline).")
+        game_state['players'][request.sid] = game_state['players'].pop(existing_sid)
+        game_state['scores'][request.sid] = game_state['scores'].pop(existing_sid, 0)
+        game_state['competition_scores'][request.sid] = game_state['competition_scores'].pop(existing_sid, 0)
+        if existing_sid in game_state['answers']:
+            game_state['answers'][request.sid] = game_state['answers'].pop(existing_sid)
+        if existing_sid in game_state['answers_time']:
+            game_state['answers_time'][request.sid] = game_state['answers_time'].pop(existing_sid)
+        game_state.setdefault('connected', {}).pop(existing_sid, None)
+        # Tokens antigos daquele SID deixam de valer
+        for old_token in [t for t, s in game_state['PLAYER_SESSIONS'].items()
+                          if s['sid'] == existing_sid]:
+            del game_state['PLAYER_SESSIONS'][old_token]
     # --- FIM DA NOVA LÓGICA DE VALIDAÇÃO ---
 
-    print(f"Jogador {canonical_name} (autorizado) entrou.")
-    game_state['players'][request.sid] = canonical_name # ### MUDANÇA ### Salva o nome "correto"
-    game_state['scores'][request.sid] = 0
+    log.info(f"Jogador {canonical_name} (autorizado) entrou.")
+    game_state['players'][request.sid] = canonical_name
+    game_state['scores'].setdefault(request.sid, 0)
+    game_state['competition_scores'].setdefault(request.sid, 0)
+    game_state.setdefault('connected', {})[request.sid] = True
 
     # Criar token de sessão
     session_token = generate_session_token()
@@ -298,9 +401,13 @@ def on_player_join(data):
         'sid': request.sid,
         'nickname': canonical_name
     }
-    
+
     if game_state['host_sid']:
         emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
+        emit('update_answer_count', {
+            'answered': len(game_state['answers']),
+            'total': game_handler.online_count(game_state)
+        }, to=game_state['host_sid'])
     
     emit('join_success', 
          {
@@ -316,9 +423,17 @@ def on_start_game(data):
     global QUIZ_DATA
     if request.sid != game_state['host_sid']:
         return
-    QUIZ_DATA = files_handler.load_quiz_data(data.get('quiz-name'))
+
+    try:
+        QUIZ_DATA = files_handler.load_quiz_data(data.get('quiz-name'))
+    except (FileNotFoundError, ValueError) as e:
+        # Não derruba o servidor: avisa o apresentador e mantém o jogo parado
+        log.error(f"Falha ao carregar o quiz: {e}")
+        emit('admin_error', {'message': str(e)}, to=request.sid)
+        return
+
     save_full_state(game_state, QUIZ_DATA)
-    print("Iniciando o jogo!")
+    log.info("Iniciando o jogo!")
     game_logic.advance_question(socketio, game_state, QUIZ_DATA)
 
 @socketio.on('next_question')
@@ -436,7 +551,7 @@ def api_export_quiz():
                 if os.path.exists(fig_path):
                     zip_file.write(fig_path, arcname=f'figures/{fig}')
                 else:
-                    print(f'Aviso: figura "{fig}" não encontrada para a pergunta {idx}')
+                    log.warning(f'Aviso: figura "{fig}" não encontrada para a pergunta {idx}')
 
     zip_buffer.seek(0)
     # Gera um nome seguro para o arquivo .quiz
@@ -527,10 +642,10 @@ def load_full_state():
     try:
         with open(constants.GAME_SAVE_FILE, 'r', encoding='utf-8') as f:
             state = json.load(f)
-        print("✅ Game state loaded from file.")
+        log.info("✅ Game state loaded from file.")
         return state
     except Exception as e:
-        print(f"❌ Failed to load game state: {e}")
+        log.error(f"❌ Failed to load game state: {e}")
         return None
 
 def restore_full_state():
@@ -547,15 +662,15 @@ def restore_full_state():
         global QUIZ_DATA
         game_state['PLAYER_SESSIONS'] = state['game_state']['PLAYER_SESSIONS']
         QUIZ_DATA = state['quiz_data']
-        print("--- Game state restored from backup ---")
+        log.info("--- Game state restored from backup ---")
         return True
     return False
 
 # On server startup, try to restore previous state
 if restore_full_state():
-    print("Server resumed with saved game state.")
+    log.info("Server resumed with saved game state.")
 else:
-    print("No saved game state found. Starting fresh.")
+    log.info("No saved game state found. Starting fresh.")
 
 # Optional: Add a socket event for host to manually clear saved state
 @socketio.on('clear_saved_game')
@@ -564,7 +679,7 @@ def on_clear_saved_game():
         return
     if os.path.exists(constants.GAME_SAVE_FILE):
         os.remove(constants.GAME_SAVE_FILE)
-        print("Saved game file deleted by host.")
+        log.info("Saved game file deleted by host.")
     # Also reset in‑memory state if desired
     game_state.update({
         'host_sid': None,
@@ -601,14 +716,34 @@ def get_local_ip():
         s.close()
     return ip
 
+def _open_browser(url):
+    """Abre o navegador padrão; falha silenciosamente em ambiente headless."""
+    try:
+        import webbrowser
+        webbrowser.open(url)
+    except Exception as e:
+        log.debug(f"Não foi possível abrir o navegador: {e}")
+
+
 if __name__ == '__main__':
     # Debug/reload ligado por padrão (uso local). Em container use FLASK_DEBUG=0.
     debug = os.environ.get('FLASK_DEBUG', '1') == '1'
     port = int(os.environ.get('QUIZ_PORT', '5000'))
 
-    print("Servidor Flask-Quiz iniciado!")
-    print(f"Aponte seu navegador de host (professor) para: http://localhost:{port}/host")
-    print(f"Aponte seu navegador de admin para: http://localhost:{port}/admin")
+    log.info("Servidor Flask-Quiz iniciado!")
+
+    if SETUP_REQUIRED:
+        setup_url = f"http://localhost:{port}/setup"
+        log.info("Primeira execução: defina a senha do professor na tela de configuração.")
+        log.info(f"Abra {setup_url} (o navegador deve abrir automaticamente).")
+        if os.environ.get('QUIZ_OPEN_BROWSER', '1') == '1' and (
+                os.environ.get('WERKZEUG_RUN_MAIN') or not debug):
+            # Espera o servidor subir; no reloader, só o processo filho abre
+            threading.Timer(2.0, _open_browser, args=(setup_url,)).start()
+    else:
+        log.info(f"Aponte seu navegador de host (professor) para: http://localhost:{port}/host")
+        log.info(f"Aponte seu navegador de admin para: http://localhost:{port}/admin")
+
     local_ip = get_local_ip()
-    print(f"Alunos devem acessar: http://{local_ip}:{port}")
+    log.info(f"Alunos devem acessar: http://{local_ip}:{port}")
     socketio.run(app, host='0.0.0.0', port=port, debug=debug, allow_unsafe_werkzeug=True)

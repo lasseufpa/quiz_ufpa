@@ -35,6 +35,11 @@ let currentQuestionData = null; // stores text, options, chart_path, index, tota
 // Avisa o servidor que esta é a tela do host
 socket.emit('host_join');
 
+// Erros enviados pelo servidor (quiz inválido, host já conectado, etc.)
+socket.on('admin_error', (data) => {
+    alert('Erro: ' + (data && data.message ? data.message : data));
+});
+
 lobbyView.style.display = 'block';
 
 function renderMath() {

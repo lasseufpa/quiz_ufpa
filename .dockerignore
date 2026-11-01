@@ -18,6 +18,7 @@ package-lock.json
 # Dados de execução e segredos (entram por volume, não na imagem)
 .private
 scores
+logs
 static/graphs
 static/tex
 static.zip

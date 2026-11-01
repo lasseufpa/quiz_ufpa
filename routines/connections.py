@@ -1,11 +1,15 @@
 from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
+import logging
 import time
 import os
 
+from routines import logger  # noqa: F401  (configura o console + arquivo)
 from routines import constants
 from routines import game_state_handler as game_handler
 from routines import chart
+
+log = logging.getLogger(__name__)
 
 def connect_host(game_state, QUIZ_DATA):
     # Require host authentication
@@ -18,11 +22,11 @@ def connect_host(game_state, QUIZ_DATA):
     if old_host_sid and old_host_sid != request.sid:
         # Notify the old host that they have been replaced
         emit('host_replaced', {'message': 'Um novo anfitrião assumiu o controle.'}, to=old_host_sid)
-        print(f"Anfitrião {old_host_sid} foi substituído por {request.sid}")
+        log.info(f"Anfitrião {old_host_sid} foi substituído por {request.sid}")
 
     # Set the new host
     game_state['host_sid'] = request.sid
-    print(f"Anfitrião conectado/substituído: {request.sid}")
+    log.info(f"Anfitrião conectado/substituído: {request.sid}")
 
     # --- Act like a page refresh: send current state to the new host ---
     # 1. Send current player list (may be empty)
@@ -45,7 +49,7 @@ def connect_host(game_state, QUIZ_DATA):
             'state': game_state['state'],
             'total_questions': len(QUIZ_DATA['questions']),
             'question_index': q_index,
-            'total_players': len(game_state['players']),
+            'total_players': game_handler.online_count(game_state),
             'answered_count': len(game_state['answers']),
             'remaining_time' : constants.QUESTION_DURATION - elapsed_time 
         }, to=game_state['host_sid'])
@@ -68,7 +72,7 @@ def connect_host(game_state, QUIZ_DATA):
             # Also optionally broadcast the answer count to the new host
             emit('update_answer_count', {
                 'answered': len(game_state['answers']),
-                'total': len(game_state['players'])
+                'total': game_handler.online_count(game_state)
             }, to=game_state['host_sid'])
 
         # If game is in ANSWER state, resend the results
@@ -113,7 +117,7 @@ def connect_host(game_state, QUIZ_DATA):
     if game_state['players']:
         # Resume existing game
         game_state['host_sid'] = request.sid
-        print(f"Anfitrião reconectou e retomou o jogo: {request.sid}")
+        log.info(f"Anfitrião reconectou e retomou o jogo: {request.sid}")
         
         # Notify host of current state
         emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
@@ -121,7 +125,7 @@ def connect_host(game_state, QUIZ_DATA):
         emit('resume_host_state', {
             'current_question': game_state['current_question'],
             'state': game_state['state'],
-            'total_players': len(game_state['players']),
+            'total_players': game_handler.online_count(game_state),
             'answered_count': len(game_state['answers'])
         }, to=game_state['host_sid'])
         
@@ -173,5 +177,5 @@ def connect_host(game_state, QUIZ_DATA):
     else:
         # No game in progress – fresh host join
         game_state['host_sid'] = request.sid
-        print(f"Novo anfitrião se juntou: {request.sid}")
+        log.info(f"Novo anfitrião se juntou: {request.sid}")
         emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
