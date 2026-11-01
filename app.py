@@ -585,6 +585,12 @@ def on_clear_saved_game():
 
 
 def get_local_ip():
+    # Permite forçar o IP mostrado aos alunos. Útil em Docker com portas
+    # mapeadas, onde o IP detectado seria o interno do container.
+    forced_ip = os.environ.get('QUIZ_HOST_IP')
+    if forced_ip:
+        return forced_ip
+
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(('8.8.8.8', 80))
@@ -596,9 +602,13 @@ def get_local_ip():
     return ip
 
 if __name__ == '__main__':
+    # Debug/reload ligado por padrão (uso local). Em container use FLASK_DEBUG=0.
+    debug = os.environ.get('FLASK_DEBUG', '1') == '1'
+    port = int(os.environ.get('QUIZ_PORT', '5000'))
+
     print("Servidor Flask-Quiz iniciado!")
-    print(f"Aponte seu navegador de host (professor) para: http://localhost:5000/host")
-    print(f"Aponte seu navegador de admin para: http://localhost:5000/admin") # ### MUDANÇA ### (Faltava)
+    print(f"Aponte seu navegador de host (professor) para: http://localhost:{port}/host")
+    print(f"Aponte seu navegador de admin para: http://localhost:{port}/admin")
     local_ip = get_local_ip()
-    print(f"Alunos devem acessar: http://{local_ip}:5000")
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
+    print(f"Alunos devem acessar: http://{local_ip}:{port}")
+    socketio.run(app, host='0.0.0.0', port=port, debug=debug, allow_unsafe_werkzeug=True)

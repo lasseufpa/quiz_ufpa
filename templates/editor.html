@@ -32,6 +32,10 @@
         align-items: center;
         margin-bottom: 15px;
     }
+    .question-header-actions {
+        display: flex;
+        gap: 5px;
+    }
     .options-list {
         list-style: none;
         padding-left: 0;
@@ -78,6 +82,80 @@
     hr {
         margin: 30px 0;
     }
+
+    /* Pré-visualização do quiz */
+    #preview-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+    }
+    #preview-modal.open {
+        display: flex;
+    }
+    .preview-dialog {
+        background: #fff;
+        width: 90%;
+        max-width: 700px;
+        max-height: 85vh;
+        overflow: auto;
+        padding: 25px;
+        border-radius: 10px;
+        text-align: center;
+    }
+    .preview-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+    .preview-counter {
+        font-weight: bold;
+        color: #555;
+    }
+    .preview-close {
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        margin: 0;
+    }
+    .preview-question-text {
+        white-space: pre-wrap;
+        text-align: left;
+    }
+    .preview-figure {
+        display: block;
+        max-width: 100%;
+        margin: 15px auto;
+    }
+    .preview-options {
+        display: grid;
+        gap: 10px;
+        margin: 20px 0;
+        text-align: left;
+    }
+    .preview-option {
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        padding: 10px 15px;
+        white-space: pre-wrap;
+    }
+    .preview-option.correct {
+        border-color: #28a745;
+        background: #e8f8ee;
+    }
+    .preview-letter {
+        font-weight: bold;
+        margin-right: 8px;
+    }
+    .preview-nav button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
 </style>
 
 <div class="quiz-editor">
@@ -101,7 +179,25 @@
         <button id="save-quiz-btn" style="background: #28a745; color: white; border: none; padding: 10px 20px; margin-left: 10px;">Salvar Quiz</button>
         <button id="export-quiz-btn" style="background: #17a2b8; color: white; border: none; padding: 10px 20px; margin-left: 10px;">📤 Exportar Quiz</button>
         <button id="import-quiz-btn" style="background: #6c757d; color: white; border: none; padding: 10px 20px; margin-left: 10px;">📂 Importar Quiz</button>
+        <button id="preview-quiz-btn" style="background: #6f42c1; color: white; border: none; padding: 10px 20px; margin-left: 10px;">👁 Pré-visualizar</button>
         <input type="file" id="import-file-input" accept=".quiz" style="display: none;">
+    </div>
+</div>
+
+<!-- Modal de pré-visualização (mesma visão de aluno/professor) -->
+<div id="preview-modal">
+    <div class="preview-dialog">
+        <div class="preview-header">
+            <span id="preview-counter" class="preview-counter"></span>
+            <button id="preview-close-btn" class="preview-close" title="Fechar">✕</button>
+        </div>
+        <h3 id="preview-question-text" class="preview-question-text"></h3>
+        <img id="preview-figure" class="preview-figure" src="" alt="Figura da questão">
+        <div id="preview-options" class="preview-options"></div>
+        <div class="preview-nav">
+            <button id="preview-prev-btn">← Anterior</button>
+            <button id="preview-next-btn">Próxima →</button>
+        </div>
     </div>
 </div>
 {% endblock %}

@@ -1,0 +1,23 @@
+# O que NÃO vai para dentro da imagem
+
+# Git e metadados do editor
+.git
+.github
+.gitignore
+
+# Cache do Python
+__pycache__
+**/__pycache__
+*.pyc
+
+# Dependências do npm (usadas só para baixar o MathJax para static/mathjax)
+node_modules
+package.json
+package-lock.json
+
+# Dados de execução e segredos (entram por volume, não na imagem)
+.private
+scores
+static/graphs
+static/tex
+static.zip

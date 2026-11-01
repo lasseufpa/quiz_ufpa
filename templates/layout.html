@@ -324,7 +324,7 @@
         font-weight: 600 !important;
         }
     </style>
-    <script src="{{ url_for('static', filename='mathjax/tex-chtml.js') }}" id="MathJax-script" async></script>
+    <!-- MathJax: a configuração precisa vir ANTES do carregamento da biblioteca -->
     <script>
     window.MathJax = {
         tex: {  
@@ -334,8 +334,44 @@
         },
         options: {
         ignoreHtmlClass: 'no-mathjax'
+        },
+        // No MathJax v4 as fontes são um pacote separado e, por padrão, vêm do
+        // CDN. Aqui apontamos para a cópia local (ver "Escrever fórmulas
+        // matemáticas" no README). Se a cópia local não existir, o carregador
+        // abaixo remove esta seção e tudo volta a vir do CDN.
+        chtml: {
+        fontURL: '/static/@mathjax/mathjax-newcm-font/chtml/woff2',
+        dynamicPrefix: '/static/@mathjax/mathjax-newcm-font/chtml/dynamic'
         }
     };
+    </script>
+
+    <!-- Carrega o MathJax: usa a cópia local (static/mathjax) se ela existir e,
+         caso contrário, busca no CDN. Veja "Escrever fórmulas matemáticas"
+         no README para habilitar o uso sem internet. -->
+    <script>
+    (function () {
+        var CDN_SRC = 'https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js';
+
+        function loadScript(src, onError) {
+            var script = document.createElement('script');
+            script.id = 'MathJax-script';
+            script.async = true;
+            script.src = src;
+            if (onError) { script.onerror = onError; }
+            document.head.appendChild(script);
+            return script;
+        }
+
+        var local = loadScript("{{ url_for('static', filename='mathjax/tex-chtml.js') }}");
+        local.onerror = function () {
+            console.warn('MathJax local não encontrado; carregando do CDN.');
+            // Sem a cópia local, as fontes também voltam para o CDN
+            delete window.MathJax.chtml;
+            local.remove();
+            loadScript(CDN_SRC);
+        };
+    })();
     </script>
 </head>
 

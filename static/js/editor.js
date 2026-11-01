@@ -51,11 +51,14 @@ function renderQuestions() {
         qDiv.className = 'question-card';
         qDiv.dataset.index = idx;
 
-        // Header with remove button
+        // Header with preview/remove buttons
         qDiv.innerHTML = `
         <div class="question-header">
             <strong>Pergunta ${idx+1}</strong>
-            <button class="remove-question-btn" data-idx="${idx}" style="background:#dc3545;color:white;">Remover</button>
+            <div class="question-header-actions">
+                <button class="preview-question-btn" data-idx="${idx}" style="background:#6f42c1;color:white;">👁 Pré-visualizar</button>
+                <button class="remove-question-btn" data-idx="${idx}" style="background:#dc3545;color:white;">Remover</button>
+            </div>
         </div>
         <label>Texto da pergunta:</label>
         <textarea class="question-text" style="width:100%; margin-bottom:10px;" rows="3">${escapeHtml(q.text)}</textarea>
@@ -111,6 +114,11 @@ function renderQuestions() {
 }
 
 function bindQuestionEvents(qDiv, qIdx) {
+    // Pré-visualização apenas desta questão
+    qDiv.querySelector('.preview-question-btn').addEventListener('click', () => {
+        previewQuestion(qIdx);
+    });
+
     // Remove question button
     qDiv.querySelector('.remove-question-btn').addEventListener('click', () => {
         quizData.questions.splice(qIdx, 1);
@@ -363,6 +371,129 @@ newQuizBtn.addEventListener('click', newQuiz);
 deleteQuizBtn.addEventListener('click', deleteQuiz);
 addQuestionBtn.addEventListener('click', addQuestion);
 saveQuizBtn.addEventListener('click', saveQuiz);
+
+// -------------------- Pré-visualização --------------------
+// mode: 'single' (só a questão clicada) ou 'quiz' (percorre o quiz inteiro)
+let previewIndex = 0;
+let previewSingle = false;
+
+const previewModal = document.getElementById('preview-modal');
+const previewCounter = document.getElementById('preview-counter');
+const previewQuestionText = document.getElementById('preview-question-text');
+const previewFigure = document.getElementById('preview-figure');
+const previewOptions = document.getElementById('preview-options');
+const previewPrevBtn = document.getElementById('preview-prev-btn');
+const previewNextBtn = document.getElementById('preview-next-btn');
+const previewNav = document.querySelector('.preview-nav');
+
+function openPreview(startIndex, mode) {
+    const total = quizData.questions ? quizData.questions.length : 0;
+    if (total === 0) {
+        alert("O quiz não tem perguntas para pré-visualizar.");
+        return;
+    }
+
+    previewSingle = (mode === 'single');
+    previewIndex = Math.max(0, Math.min(startIndex, total - 1));
+
+    // No modo "single" não há navegação entre perguntas
+    previewNav.style.display = previewSingle ? 'none' : 'flex';
+
+    renderPreview();
+    previewModal.classList.add('open');
+    typesetPreview();   // o modal precisa estar visível para o MathJax medir
+}
+
+// Pré-visualização do quiz inteiro (a partir da primeira questão)
+function previewQuiz() {
+    openPreview(0, 'quiz');
+}
+
+// Pré-visualização de uma única questão
+function previewQuestion(idx) {
+    openPreview(idx, 'single');
+}
+
+function renderPreview() {
+    const total = quizData.questions.length;
+    const q = quizData.questions[previewIndex];
+    if (!q) return;
+
+    previewCounter.textContent = previewSingle
+        ? `Pré-visualização – Pergunta ${previewIndex + 1} de ${total}`
+        : `Quiz completo – Pergunta ${previewIndex + 1} de ${total}`;
+
+    previewQuestionText.textContent = q.text || '(sem texto)';
+
+    if (q.figure && q.figure !== 'none') {
+        previewFigure.src = `/static/quiz-figures/${q.figure}`;
+        previewFigure.style.display = 'block';
+    } else {
+        previewFigure.removeAttribute('src');
+        previewFigure.style.display = 'none';
+    }
+
+    previewOptions.innerHTML = '';
+    (q.options || []).forEach((opt, i) => {
+        const div = document.createElement('div');
+        div.className = 'preview-option' + (q.correct_option === i ? ' correct' : '');
+
+        const letter = document.createElement('span');
+        letter.className = 'preview-letter';
+        letter.textContent = `${String.fromCharCode(65 + i)})`;
+
+        div.appendChild(letter);
+        div.appendChild(document.createTextNode(opt || ''));
+        previewOptions.appendChild(div);
+    });
+
+    previewPrevBtn.disabled = previewIndex === 0;
+    previewNextBtn.disabled = previewIndex === total - 1;
+}
+
+// O MathJax processa o documento uma única vez, quando a página carrega.
+// Como o conteúdo do preview é criado depois (e trocado a cada pergunta),
+// é preciso pedir para reprocessá-lo manualmente.
+function typesetPreview() {
+    if (!window.MathJax) return;
+
+    const ready = (MathJax.startup && MathJax.startup.promise)
+        ? MathJax.startup.promise
+        : Promise.resolve();
+
+    ready.then(() => {
+        if (typeof MathJax.typesetPromise !== 'function') return;
+        if (typeof MathJax.typesetClear === 'function') {
+            MathJax.typesetClear([previewModal]);
+        }
+        return MathJax.typesetPromise([previewModal]);
+    }).catch(err => console.warn('MathJax error:', err));
+}
+
+function closePreview() {
+    previewModal.classList.remove('open');
+}
+
+previewPrevBtn.addEventListener('click', () => {
+    if (previewIndex > 0) { previewIndex--; renderPreview(); typesetPreview(); }
+});
+previewNextBtn.addEventListener('click', () => {
+    if (previewIndex < quizData.questions.length - 1) { previewIndex++; renderPreview(); typesetPreview(); }
+});
+document.getElementById('preview-close-btn').addEventListener('click', closePreview);
+document.getElementById('preview-quiz-btn').addEventListener('click', previewQuiz);
+
+// Fecha ao clicar no fundo; Esc fecha sempre, setas só no modo "quiz"
+previewModal.addEventListener('click', (e) => {
+    if (e.target === previewModal) closePreview();
+});
+document.addEventListener('keydown', (e) => {
+    if (!previewModal.classList.contains('open')) return;
+    if (e.key === 'Escape') { closePreview(); return; }
+    if (previewSingle) return;
+    if (e.key === 'ArrowLeft') previewPrevBtn.click();
+    else if (e.key === 'ArrowRight') previewNextBtn.click();
+});
 
 // Initial load
 loadQuizList();
