@@ -1,38 +1,34 @@
 from pathlib import Path
 import logging
 import os
-import json
 
+from routines import json_store
 from routines import logger  # noqa: F401  (configura o console + arquivo)
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 QUIZZES_FOLDER =    'static/quizzes'   
 
 def load_quiz_data(file):
-    """Carrega as perguntas de um arquivo JSON."""
-    filename = Path(__file__).parent /'..'/ 'static'/ 'quizzes' / (file + '.json')
-    try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            # Validação simples para garantir que o arquivo tem o formato esperado
-            if 'title' not in data or 'questions' not in data:
-                raise ValueError(
-                    f"Quiz '{file}' mal formatado: faltando 'title' ou 'questions'."
-                )
-            
-            log.info(f"--- Quiz '{data['title']}' carregado com sucesso de '{filename}' ---")
-            return data
-            
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            f"Quiz '{file}' não encontrado. Crie o arquivo em static/quizzes."
+    """Carrega as perguntas de um arquivo JSON (com recuperação de backup)."""
+    filename = Path(__file__).parent / '..' / 'static' / 'quizzes' / (file + '.json')
+    data, source = json_store.read_json(str(filename))
+
+    if data is None:
+        if source == 'missing':
+            raise FileNotFoundError(
+                f"Quiz '{file}' não encontrado. Crie o arquivo em static/quizzes."
+            )
+        raise ValueError(
+            f"Quiz '{file}' está corrompido e não há backup válido."
         )
 
-    except json.JSONDecodeError:
+    if not isinstance(data, dict) or 'title' not in data or 'questions' not in data:
         raise ValueError(
-            f"Quiz '{file}' contém um JSON inválido. "
-            "Verifique a sintaxe (aspas duplas, vírgulas, etc.)."
+            f"Quiz '{file}' mal formatado: faltando 'title' ou 'questions'."
         )
+
+    log.info(f"--- Quiz '{data['title']}' carregado com sucesso de '{filename}' ---")
+    return data
 
 
 def allowed_file(filename):
@@ -47,15 +43,15 @@ def get_quiz_list():
     return quizzes
 
 def load_quiz(quiz_name):
-    """Loads a quiz dict from quizzes/quiz_name.json"""
+    """Carrega um quiz do disco (None se não existir)."""
     path = os.path.join(QUIZZES_FOLDER, f'{quiz_name}.json')
-    if not os.path.exists(path):
+    data, source = json_store.read_json(path)
+    if data is None and source == 'missing':
         return None
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    return data
+
 
 def save_quiz(quiz_name, data):
-    """Saves quiz dict to quizzes/quiz_name.json"""
+    """Salva um quiz (escrita atômica + backup)."""
     path = os.path.join(QUIZZES_FOLDER, f'{quiz_name}.json')
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    json_store.write_json(path, data)

@@ -1,9 +1,8 @@
 from routines import  constants
 import logging
-import json
-import os
 import time
 
+from routines import json_store
 from routines import logger  # noqa: F401  (configura o console + arquivo)
 
 log = logging.getLogger(__name__)
@@ -71,21 +70,11 @@ def save_full_state(game_state, QUIZ_DATA, force=True):
         'quiz_data': QUIZ_DATA  # current quiz being played
     }
 
-    tmp_path = constants.GAME_SAVE_FILE + '.tmp'
     try:
-        with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(state, f, indent=2, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, constants.GAME_SAVE_FILE)  # troca atômica
+        json_store.write_json(constants.GAME_SAVE_FILE, state)
         _last_save_at = now
         log.debug("✅ Game state saved to file.")
         return True
     except Exception as e:
         log.error(f"❌ Failed to save game state: {e}")
-        try:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-        except OSError:
-            pass
         return False

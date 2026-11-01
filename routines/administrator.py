@@ -4,12 +4,12 @@ Responsável por carregar/salvar `.private/users.json` (dicionário
 {nome_minusculo: NomeOriginal}) e pelos eventos Socket.IO do painel /admin.
 """
 
-import json
 import logging
 
 from flask import request, session
 from flask_socketio import emit
 
+from routines import json_store
 from routines import logger  # noqa: F401  (configura o console + arquivo)
 
 USERS_FILE = '.private/users.json'
@@ -19,30 +19,28 @@ log = logging.getLogger(__name__)
 
 def load_users(filename=USERS_FILE):
     """Carrega a lista de usuários do JSON. Retorna um DICIONÁRIO {lower: canonical}."""
-    try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if not isinstance(data, list) or not all(isinstance(s, str) for s in data):
-                log.warning(f"Aviso: {filename} mal formatado. Tratando como lista vazia.")
-                return {}
+    data, source = json_store.read_json(filename)
 
-            # Cria um dicionário {nome_minusculo: NomeOriginal}
-            return {user.lower(): user for user in data}
+    if data is None:
+        if source == 'missing':
+            log.warning(f"Aviso: {filename} não encontrado. Criando um novo.")
+            save_users({})
+        else:
+            log.error(f"Aviso: {filename} inválido e sem backup. Tratando como lista vazia.")
+        return {}
 
-    except FileNotFoundError:
-        log.warning(f"Aviso: {filename} não encontrado. Criando um novo.")
-        save_users({})
+    if not isinstance(data, list) or not all(isinstance(s, str) for s in data):
+        log.warning(f"Aviso: {filename} mal formatado. Tratando como lista vazia.")
         return {}
-    except json.JSONDecodeError:
-        log.warning(f"Aviso: {filename} inválido. Tratando como lista vazia.")
-        return {}
+
+    # Cria um dicionário {nome_minusculo: NomeOriginal}
+    return {user.lower(): user for user in data}
 
 
 def save_users(users_dict, filename=USERS_FILE):
     """Salva o DICIONÁRIO de usuários de volta no JSON (apenas os nomes originais)."""
     canonical_names = list(users_dict.values())
-    with open(filename, 'w', encoding='utf-8') as f:
-        json.dump(canonical_names, f, indent=2, ensure_ascii=False)
+    json_store.write_json(filename, canonical_names)
 
 
 # Estado em memória: {nome_minusculo: NomeOriginal}
