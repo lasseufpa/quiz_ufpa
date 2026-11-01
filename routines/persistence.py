@@ -45,6 +45,7 @@ def restore_full_state():
     runtime.game_state.setdefault('answers_time', {})
     runtime.game_state.setdefault('connected', {})
     runtime.game_state.setdefault('question_token', 0)
+    runtime.game_state.setdefault('class_slug', None)
     runtime.game_state['PLAYER_SESSIONS'] = saved.get('PLAYER_SESSIONS', {})
 
     runtime.quiz_data = state.get('quiz_data')

@@ -3,9 +3,9 @@
 from routines import administrator
 
 
-def on_admin_join():
-    """Admin se conectou à página de gerenciamento."""
-    administrator.admin_join()
+def on_admin_join(data=None):
+    """Admin se conectou à página de gerenciamento (de uma turma)."""
+    administrator.admin_join(data)
 
 
 def on_add_user(data):

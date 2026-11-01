@@ -1,6 +1,8 @@
+let currentClass = "";    // slug da turma aberta no editor
 let currentQuizName = "";   // empty string means new quiz
 let quizData = { title: "", questions: [] };
 
+const classSelect = document.getElementById('class-select');
 const quizSelect = document.getElementById('quiz-select');
 const quizTitleInput = document.getElementById('quiz-title');
 const questionsContainer = document.getElementById('questions-container');
@@ -9,11 +11,43 @@ const deleteQuizBtn = document.getElementById('delete-quiz-btn');
 const addQuestionBtn = document.getElementById('add-question-btn');
 const saveQuizBtn = document.getElementById('save-quiz-btn');
 
+// -------------------- Helpers de API (por turma) --------------------
+function classQuizUrl(quizName) {
+    return `/api/classes/${encodeURIComponent(currentClass)}/quiz/${encodeURIComponent(quizName)}`;
+}
+
+// -------------------- Carrega as turmas e a lista de quizzes --------------------
+async function loadClasses() {
+    const res = await fetch('/api/classes');
+    const data = await res.json();
+    const turmas = data.classes || [];
+
+    classSelect.innerHTML = '';
+    turmas.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.slug;
+        opt.textContent = `${c.name} (${c.students} aluno${c.students === 1 ? '' : 's'})`;
+        classSelect.appendChild(opt);
+    });
+
+    const previous = currentClass;
+    const existente = turmas.some(c => c.slug === previous);
+    currentClass = existente ? previous : (turmas[0] ? turmas[0].slug : '');
+    classSelect.value = currentClass;
+
+    newQuiz();
+    await loadQuizList();
+}
+
 // -------------------- Helper: fetch quizzes list --------------------
 async function loadQuizList() {
-    const res = await fetch('/api/quizzes');
-    const quizzes = await res.json();
     quizSelect.innerHTML = '<option value="">-- Novo Quiz --</option>';
+    if (!currentClass) return;
+
+    const res = await fetch(`/api/classes/${encodeURIComponent(currentClass)}/quizzes`);
+    const quizzes = await res.json();
+    if (!Array.isArray(quizzes)) return;
+
     quizzes.forEach(name => {
         const opt = document.createElement('option');
         opt.value = name;
@@ -32,7 +66,7 @@ async function loadQuiz(quizName) {
         renderQuestions();
         return;
     }
-    const res = await fetch(`/api/quiz/${encodeURIComponent(quizName)}`);
+    const res = await fetch(classQuizUrl(quizName));
     if (res.ok) {
         quizData = await res.json();
         currentQuizName = quizName;
@@ -216,7 +250,7 @@ async function saveQuiz() {
         targetName = newTitle.replace(/[^a-zA-Z0-9_\-]/g, '_');
         if (targetName.length === 0) targetName = "quiz_" + Date.now();
     }
-    const res = await fetch(`/api/quiz/${encodeURIComponent(targetName)}`, {
+    const res = await fetch(classQuizUrl(targetName), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(quizData)
@@ -240,7 +274,7 @@ async function deleteQuiz() {
         return;
     }
     if (!confirm(`Tem certeza que deseja excluir o quiz "${currentQuizName}"?`)) return;
-    const res = await fetch(`/api/quiz/${encodeURIComponent(currentQuizName)}`, { method: 'DELETE' });
+    const res = await fetch(classQuizUrl(currentQuizName), { method: 'DELETE' });
     if (res.ok) {
         alert("Quiz excluído.");
         currentQuizName = "";
@@ -282,6 +316,12 @@ quizSelect.addEventListener('change', (e) => {
     } else {
         loadQuiz(selected);
     }
+});
+
+classSelect.addEventListener('change', async () => {
+    currentClass = classSelect.value;
+    newQuiz();
+    await loadQuizList();
 });
 
 // -------------------- Exportar Quiz --------------------
@@ -335,6 +375,7 @@ document.getElementById('import-file-input').addEventListener('change', async (e
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('class', currentClass);
 
     try {
         const response = await fetch('/api/quiz/import', {
@@ -495,6 +536,182 @@ document.addEventListener('keydown', (e) => {
     else if (e.key === 'ArrowRight') previewNextBtn.click();
 });
 
+// -------------------- Turmas --------------------
+const classModal = document.getElementById('class-modal');
+const classModalTitle = document.getElementById('class-modal-title');
+const classNameInput = document.getElementById('class-name-input');
+let classModalAction = 'create';
+
+function currentClassName() {
+    const opt = classSelect.options[classSelect.selectedIndex];
+    return opt ? opt.textContent.replace(/ \(\d+ alunos?\)$/, '') : '';
+}
+
+function openClassModal(action) {
+    if (action === 'rename' && !currentClass) {
+        alert('Selecione uma turma para renomear.');
+        return;
+    }
+
+    classModalAction = action;
+    classModalTitle.textContent = action === 'create' ? 'Nova turma' : 'Renomear turma';
+    classNameInput.value = action === 'create' ? '' : currentClassName();
+    classModal.classList.add('open');
+    classNameInput.focus();
+    classNameInput.select();
+}
+
+function closeClassModal() {
+    classModal.classList.remove('open');
+}
+
+async function submitClassModal() {
+    const name = classNameInput.value.trim();
+    if (!name) {
+        alert('Informe o nome da turma.');
+        return;
+    }
+
+    const criar = classModalAction === 'create';
+    const url = criar
+        ? '/api/classes'
+        : `/api/classes/${encodeURIComponent(currentClass)}`;
+
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        alert(`Erro ao ${criar ? 'criar' : 'renomear'} a turma: ` + (data.error || 'desconhecido'));
+        return;
+    }
+
+    if (criar) currentClass = data.slug;
+    closeClassModal();
+    await loadClasses();
+}
+
+async function deleteClass() {
+    if (!currentClass) return;
+
+    const nome = currentClassName();
+    if (!confirm(`Excluir a turma "${nome}" e TODOS os quizzes dela?`)) return;
+
+    const res = await fetch(`/api/classes/${encodeURIComponent(currentClass)}`, {
+        method: 'DELETE'
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        alert('Erro ao excluir turma: ' + (data.error || 'desconhecido'));
+        return;
+    }
+
+    currentClass = '';
+    await loadClasses();
+}
+
+document.getElementById('new-class-btn').addEventListener('click', () => openClassModal('create'));
+document.getElementById('rename-class-btn').addEventListener('click', () => openClassModal('rename'));
+document.getElementById('delete-class-btn').addEventListener('click', deleteClass);
+document.getElementById('class-save-btn').addEventListener('click', submitClassModal);
+document.getElementById('class-cancel-btn').addEventListener('click', closeClassModal);
+document.getElementById('class-close-btn').addEventListener('click', closeClassModal);
+classNameInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') submitClassModal();
+});
+classModal.addEventListener('click', (e) => {
+    if (e.target === classModal) closeClassModal();
+});
+
+// -------------------- Copiar quiz de outra turma --------------------
+const copyModal = document.getElementById('copy-modal');
+const copySrcClass = document.getElementById('copy-src-class');
+const copySrcQuiz = document.getElementById('copy-src-quiz');
+const copyNewName = document.getElementById('copy-new-name');
+const copyConfirmBtn = document.getElementById('copy-confirm-btn');
+
+let quizzesByClass = {};
+
+function refreshCopyQuizzes() {
+    const quizzes = quizzesByClass[copySrcClass.value] || [];
+    copySrcQuiz.innerHTML = '';
+
+    quizzes.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        copySrcQuiz.appendChild(opt);
+    });
+
+    copyNewName.value = quizzes.length ? quizzes[0] : '';
+    copyConfirmBtn.disabled = quizzes.length === 0;
+}
+
+async function openCopyModal() {
+    if (!currentClass) {
+        alert('Selecione a turma de destino.');
+        return;
+    }
+
+    const [resAll, resClasses] = await Promise.all([
+        fetch('/api/quizzes-by-class'),
+        fetch('/api/classes')
+    ]);
+    quizzesByClass = await resAll.json();
+    const dataClasses = await resClasses.json();
+
+    copySrcClass.innerHTML = '';
+    (dataClasses.classes || []).forEach(c => {
+        if (c.slug === currentClass) return;   // não faz sentido copiar para a mesma turma
+        const opt = document.createElement('option');
+        opt.value = c.slug;
+        opt.textContent = c.name;
+        copySrcClass.appendChild(opt);
+    });
+
+    if (!copySrcClass.options.length) {
+        alert('Não há outra turma cadastrada para copiar quizzes.');
+        return;
+    }
+
+    refreshCopyQuizzes();
+    copyModal.classList.add('open');
+}
+
+async function confirmCopy() {
+    const quizOrigem = copySrcQuiz.value;
+    if (!quizOrigem) return;
+
+    const res = await fetch(`/api/classes/${encodeURIComponent(currentClass)}/copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            from_class: copySrcClass.value,
+            quiz_name: quizOrigem,
+            new_name: copyNewName.value.trim() || quizOrigem
+        })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        alert('Erro ao copiar: ' + (data.error || 'desconhecido'));
+        return;
+    }
+
+    copyModal.classList.remove('open');
+    await loadQuizList();
+    quizSelect.value = data.quiz_name;
+    await loadQuiz(data.quiz_name);
+    alert(`Quiz copiado como "${data.quiz_name}".`);
+}
+
+document.getElementById('copy-quiz-btn').addEventListener('click', openCopyModal);
+document.getElementById('copy-close-btn').addEventListener('click', () => copyModal.classList.remove('open'));
+copySrcClass.addEventListener('change', refreshCopyQuizzes);
+copySrcQuiz.addEventListener('change', () => { copyNewName.value = copySrcQuiz.value; });
+copyConfirmBtn.addEventListener('click', confirmCopy);
+copyModal.addEventListener('click', (e) => { if (e.target === copyModal) copyModal.classList.remove('open'); });
+
 // Initial load
-loadQuizList();
-newQuiz();  // start empty
+loadClasses();

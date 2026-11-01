@@ -83,8 +83,10 @@
         margin: 30px 0;
     }
 
-    /* Pré-visualização do quiz */
-    #preview-modal {
+    /* Pré-visualização do quiz e modais */
+    #preview-modal,
+    #copy-modal,
+    #class-modal {
         display: none;
         position: fixed;
         inset: 0;
@@ -93,7 +95,9 @@
         justify-content: center;
         align-items: center;
     }
-    #preview-modal.open {
+    #preview-modal.open,
+    #copy-modal.open,
+    #class-modal.open {
         display: flex;
     }
     .preview-dialog {
@@ -162,11 +166,21 @@
     <h1>Gerenciador de Quizzes</h1>
 
     <div class="quiz-selector">
+        <label for="class-select" style="white-space: nowrap;">Turma:</label>
+        <select id="class-select"></select>
+        <button id="new-class-btn" class="btn-warning">Nova turma</button>
+        <button id="rename-class-btn" class="btn-warning">Renomear</button>
+        <button id="delete-class-btn" class="btn-danger">Excluir turma</button>
+    </div>
+
+    <div class="quiz-selector">
+        <label for="quiz-select" style="white-space: nowrap;">Quiz:</label>
         <select id="quiz-select">
             <option value="">-- Novo Quiz --</option>
         </select>
         <button id="new-quiz-btn" class="btn-warning">Novo</button>
         <button id="delete-quiz-btn" class="btn-danger">Excluir</button>
+        <button id="copy-quiz-btn" style="background:#17a2b8; color:white; border:none;">📥 Copiar de outra turma</button>
     </div>
 
     <div id="quiz-form">
@@ -197,6 +211,45 @@
         <div class="preview-nav">
             <button id="preview-prev-btn">← Anterior</button>
             <button id="preview-next-btn">Próxima →</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de cópia entre turmas -->
+<div id="copy-modal">
+    <div class="preview-dialog">
+        <div class="preview-header">
+            <span class="preview-counter">Copiar quiz de outra turma</span>
+            <button id="copy-close-btn" class="preview-close" title="Fechar">✕</button>
+        </div>
+        <div style="text-align: left;">
+            <label for="copy-src-class">Turma de origem:</label>
+            <select id="copy-src-class" style="width: 100%; padding: 8px; margin: 6px 0 14px;"></select>
+
+            <label for="copy-src-quiz">Quiz:</label>
+            <select id="copy-src-quiz" style="width: 100%; padding: 8px; margin: 6px 0 14px;"></select>
+
+            <label for="copy-new-name">Salvar na turma atual como:</label>
+            <input id="copy-new-name" type="text" style="width: 100%; padding: 8px; margin: 6px 0 14px;">
+        </div>
+        <div class="preview-nav">
+            <button id="copy-confirm-btn" style="background: #28a745; color: white; border: none;">Copiar para esta turma</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de turma (criar / renomear) -->
+<div id="class-modal">
+    <div class="preview-dialog" style="max-width: 460px;">
+        <div class="preview-header">
+            <span id="class-modal-title" class="preview-counter">Turma</span>
+            <button id="class-close-btn" class="preview-close" title="Fechar">✕</button>
+        </div>
+        <input id="class-name-input" type="text" placeholder="Nome da turma"
+               style="width: 100%; padding: 10px; font-size: 16px; margin-bottom: 16px;">
+        <div class="preview-nav">
+            <button id="class-cancel-btn">Cancelar</button>
+            <button id="class-save-btn" style="background: #28a745; color: white; border: none;">Salvar</button>
         </div>
     </div>
 </div>

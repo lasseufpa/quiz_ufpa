@@ -17,28 +17,36 @@ from flask_socketio import emit
 
 from routines import logger  # noqa: F401  (configura o console + arquivo)
 from routines import chart
+from routines import classes
 from routines import constants
 from routines import game_state_handler as game_handler
 
 log = logging.getLogger(__name__)
 
 
+def _safe_filename(text):
+    """Deixa um texto seguro para usar como parte do nome de arquivo."""
+    safe = "".join(c if c.isalnum() or c in '.-_' else '_' for c in text or '')
+    return safe.strip('_') or 'sem_nome'
+
+
 # -------------------- Exportação de resultados --------------------
-def export_scores_to_csv(scores, competition_scores, players, quiz_data=None):
+def export_scores_to_csv(scores, competition_scores, players, quiz_data=None,
+                         class_name=None):
     """
     Exporta os resultados do quiz para um arquivo CSV local.
     Inclui colunas: Jogador, Pontuação (Avaliação), Pontuação (Competição).
+    O nome do arquivo leva a turma e o quiz, para não misturar resultados.
     """
     quiz_title = "unknown_quiz"
     if quiz_data and 'title' in quiz_data:
-        raw_title = quiz_data['title']
-        safe_title = "".join(c if c.isalnum() or c in '.-_' else '_' for c in raw_title)
-        quiz_title = safe_title.strip('_')
-        if not quiz_title:
-            quiz_title = "unknown_quiz"
+        quiz_title = _safe_filename(quiz_data['title'])
 
     date_str = datetime.now().strftime("%Y%m%d")
-    base_filename = f"scores_{quiz_title}_{date_str}.csv"
+    if class_name:
+        base_filename = f"scores_{_safe_filename(class_name)}_{quiz_title}_{date_str}.csv"
+    else:
+        base_filename = f"scores_{quiz_title}_{date_str}.csv"
     filepath = os.path.join(constants.SCORES_FOLDER, base_filename)
     os.makedirs(constants.SCORES_FOLDER, exist_ok=True)
 
@@ -96,7 +104,8 @@ def finish_game(game_state, quiz_data):
         game_state['scores'],
         game_state['competition_scores'],
         game_state['players'],
-        quiz_data
+        quiz_data,
+        classes.name_of(game_state.get('class_slug')) or None,
     )
     emit('game_over', leaderboard, broadcast=True)
     reset_game_state(game_state)

@@ -8,7 +8,7 @@ import time
 from flask import request
 from flask_socketio import emit
 
-from routines import administrator, constants, persistence
+from routines import classes, constants, persistence, room
 from routines import game_state_handler as game_handler
 from routines import runtime
 from routines import logger  # noqa: F401  (configura console + arquivo)
@@ -23,6 +23,8 @@ def _generate_session_token():
 
 def on_connect():
     log.info(f"Cliente conectado: {request.sid}")
+    # Informa se a sala está aberta e de qual turma (o aluno não escolhe turma)
+    emit('room_info', room.payload(), to=request.sid)
 
 
 def on_disconnect():
@@ -131,13 +133,24 @@ def on_player_join(data):
     if not nickname:
         return
 
-    # --- Validação case-insensitive contra a allow-list ---
-    canonical_name = administrator.is_registered(nickname)
+    # A turma vem da sala aberta pelo apresentador (não do jogador)
+    class_slug = room.current_class()
+    if not class_slug or not classes.exists(class_slug):
+        emit('join_failed', {
+            'reason': 'O professor ainda não abriu a sala. Aguarde um instante e tente de novo.'
+        }, to=request.sid)
+        log.warning(f"Falha no login: sala fechada ('{nickname}' tentou entrar).")
+        return
+
+    # --- Validação case-insensitive contra a lista de alunos da turma ---
+    canonical_name = classes.find_student(class_slug, nickname)
 
     if canonical_name is None:
-        emit('join_failed', {'reason': 'Usuário não cadastrado. Fale com o administrador.'},
-             to=request.sid)
-        log.warning(f"Falha no login: Usuário '{nickname}' não cadastrado.")
+        emit('join_failed', {
+            'reason': f'Não cadastrado na turma "{classes.name_of(class_slug)}". '
+                      f'Fale com o professor.'
+        }, to=request.sid)
+        log.warning(f"Falha no login: '{nickname}' não está na turma {class_slug}.")
         return
 
     # Já existe alguém com esse nome?

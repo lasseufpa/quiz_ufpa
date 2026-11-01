@@ -1,15 +1,59 @@
 const nicknameInput = document.getElementById('nickname-input');
 const addBtn = document.getElementById('add-btn');
 const userListEl = document.getElementById('user-list');
+const classSelect = document.getElementById('class-select');
 
-// 1. Avisa o servidor que somos um admin e pede a lista
-socket.emit('admin_join');
+let currentClass = '';
 
-// 2. Recebe a lista de usuários do servidor
-socket.on('update_user_list', (users) => {
+// Carrega as turmas e entra na primeira (ou na que está em jogo)
+async function loadClasses() {
+    const res = await fetch('/api/classes');
+    const data = await res.json();
+    const turmas = data.classes || [];
+
+    classSelect.innerHTML = '';
+    if (!turmas.length) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'Nenhuma turma cadastrada';
+        classSelect.appendChild(opt);
+        userListEl.innerHTML = '<li class="user-list-item">Crie uma turma no editor de quizzes.</li>';
+        return;
+    }
+
+    turmas.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.slug;
+        opt.textContent = `${c.name} (${c.students} alunos)`;
+        classSelect.appendChild(opt);
+    });
+
+    currentClass = (data.active && turmas.some(c => c.slug === data.active))
+        ? data.active
+        : turmas[0].slug;
+    classSelect.value = currentClass;
+
+    // 1. Avisa o servidor que somos um admin desta turma e pede a lista
+    socket.emit('admin_join', { 'class': currentClass });
+}
+
+classSelect.addEventListener('change', () => {
+    currentClass = classSelect.value;
+    socket.emit('admin_join', { 'class': currentClass });
+});
+
+loadClasses();
+
+// 2. Recebe a lista de alunos da turma
+socket.on('update_user_list', (payload) => {
+    if (!payload) return;
+    // Ignora atualizações de outra turma
+    if (payload.class && payload.class !== currentClass) return;
+
+    const users = payload.students || [];
     userListEl.innerHTML = ''; // Limpa a lista antiga
     if (users.length === 0) {
-        userListEl.innerHTML = '<li class="user-list-item">Nenhum usuário cadastrado.</li>';
+        userListEl.innerHTML = '<li class="user-list-item">Nenhum usuário cadastrado nesta turma.</li>';
     }
 
     users.forEach(nickname => {
@@ -104,7 +148,7 @@ socket.on('update_user_list', (users) => {
         // CLIQUE EM "REMOVER"
         removeBtn.addEventListener('click', () => {
             if (confirm(`Tem certeza que deseja remover o usuário "${nickname}"?`)) {
-                socket.emit('remove_user', { 'nickname': nickname });
+                socket.emit('remove_user', { 'nickname': nickname, 'class': currentClass });
             }
         });
 
@@ -115,7 +159,8 @@ socket.on('update_user_list', (users) => {
             if (newNickname && newNickname !== nickname) {
                 socket.emit('edit_user', {
                     'old_nickname': nickname,
-                    'new_nickname': newNickname
+                    'new_nickname': newNickname,
+                    'class': currentClass
                 });
             } else if (newNickname === nickname) {
                 // Se não mudou, apenas cancela a edição
@@ -137,8 +182,12 @@ socket.on('update_user_list', (users) => {
 // 4. Envia um novo usuário para ADICIONAR (Sem mudanças)
 addBtn.addEventListener('click', () => {
     const nickname = nicknameInput.value.trim();
+    if (!currentClass) {
+        alert('Selecione uma turma.');
+        return;
+    }
     if (nickname) {
-        socket.emit('add_user', { 'nickname': nickname });
+        socket.emit('add_user', { 'nickname': nickname, 'class': currentClass });
         nicknameInput.value = ''; // Limpa o campo
     }
 });

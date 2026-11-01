@@ -14,7 +14,7 @@ from flask import Flask, request
 from flask_socketio import SocketIO
 
 from routines import logger  # noqa: F401  (configura console + arquivo)
-from routines import constants, runtime
+from routines import classes, constants, runtime
 from routines import game_state_handler as game_handler
 from routines import secrets as secret_store
 from routines.network import get_local_ip
@@ -33,6 +33,9 @@ def create_app():
     """Cria a aplicação Flask, o Socket.IO e registra tudo. Retorna (app, socketio)."""
     for folder in (constants.QUIZZES_FOLDER, constants.UPLOAD_FOLDER, constants.SECRET_FOLDER):
         os.makedirs(folder, exist_ok=True)
+
+    # Garante que exista ao menos uma turma (migra o formato antigo na 1ª vez)
+    classes.ensure_ready()
 
     secret_key, admin_hash = secret_store.read_secret_file()
 

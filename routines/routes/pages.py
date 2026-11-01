@@ -1,5 +1,7 @@
 """Páginas do aluno, do apresentador e do editor de quizzes."""
 
+import os
+
 from flask import jsonify, redirect, render_template, request, session, url_for
 
 from routines import runtime
@@ -19,6 +21,7 @@ def host_view():
         'host.html',
         quiz_title="Quiz UFPA",
         host_ip=get_local_ip(),
+        port=os.environ.get('QUIZ_PORT', '5000'),
     )
 
 

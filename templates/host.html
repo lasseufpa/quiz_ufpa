@@ -2,20 +2,112 @@
 {% block title %}(Host) {{ quiz_title }}{% endblock %}
 
 {% block content %}
-<div id="lobby" style="display: none;">
+<style>
+    .selector-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+
+    .selector-row select {
+        padding: 8px;
+        font-size: 16px;
+        min-width: 260px;
+    }
+
+    /* Sala de espera: QR code + endereço */
+    .join-box {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 25px;
+        flex-wrap: wrap;
+        margin: 20px 0;
+    }
+
+    .join-box #join-qr svg {
+        width: 220px;
+        height: 220px;
+        display: block;
+        background: #fff;
+        padding: 6px;
+        border-radius: 8px;
+    }
+
+    .join-info {
+        text-align: left;
+        max-width: 320px;
+    }
+
+    .join-url {
+        font-size: 1.25em;
+        font-weight: bold;
+        word-break: break-all;
+        background: #fff;
+        border: 1px dashed #ccc;
+        border-radius: 6px;
+        padding: 8px 12px;
+        display: inline-block;
+    }
+
+    .join-class {
+        color: #555;
+    }
+
+    .change-selection {
+        display: inline-block;
+        margin-top: 18px;
+        font-size: 0.9em;
+        color: #888;
+    }
+</style>
+
+<div id="lobby" style="display: none;" data-join-base="http://{{ host_ip }}:{{ port }}">
     <h1>{{ quiz_title }}</h1>
-    <select id="quiz-select">
-            <option value="">-- Selecionar Quiz --</option>
-    </select>
-    <h2>Aguardando jogadores...</h2>
-    <p>(Peça para os alunos acessarem: <strong>http://{{ host_ip }}:5000</strong>)</p>
 
-    <ul id="player-list" class="player-list">
-    </ul>
+    <!-- Fase 1: escolher turma e quiz -->
+    <div id="lobby-setup">
+        <div class="selector-row">
+            <label for="class-select">Turma:</label>
+            <select id="class-select">
+                <option value="">-- Selecionar Turma --</option>
+            </select>
+        </div>
+        <div class="selector-row">
+            <label for="quiz-select">Quiz:</label>
+            <select id="quiz-select">
+                <option value="">-- Selecionar Quiz --</option>
+            </select>
+        </div>
+        <button id="prepare-btn" disabled>Aguardar jogadores</button>
+    </div>
 
-    <button id="start-game-btn" disabled>Iniciar Jogo (0 Jogadores)</button>
-    <button id="force-end-btn" style="display: none; background-color: #dc3545; margin-top: 10px;">Finalizar
-        Quiz</button>
+    <!-- Fase 2: sala aberta, alunos entrando -->
+    <div id="lobby-waiting" style="display: none;">
+        <h2>Aguardando jogadores...</h2>
+
+        <div class="join-box">
+            <div id="join-qr"></div>
+            <div class="join-info">
+                <p>Aponte a câmera do celular para o QR code<br>ou acesse no navegador:</p>
+                <p><span id="join-url" class="join-url"></span></p>
+                <p class="join-class">Turma: <strong id="join-class-name"></strong></p>
+            </div>
+        </div>
+
+        <ul id="player-list" class="player-list">
+        </ul>
+
+        <button id="start-game-btn" disabled>Iniciar Jogo (0 Jogadores)</button>
+        <button id="force-end-btn" style="display: none; background-color: #dc3545; margin-top: 10px;">Finalizar
+            Quiz</button>
+
+        <div>
+            <a href="#" id="change-selection" class="change-selection">↩ trocar turma/quiz</a>
+        </div>
+    </div>
 </div>
 
 <div id="question-view" style="display: none;">
@@ -57,5 +149,7 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Gerador de QR code (MIT, cópia local para funcionar sem internet) -->
+<script src="{{ url_for('static', filename='js/qrcode.js') }}"></script>
 <script src="{{ url_for('static', filename='js/host.js') }}"></script>
 {% endblock %}

@@ -1,4 +1,4 @@
-"""API do editor de quizzes: listar, salvar, excluir, importar e exportar."""
+"""API do editor: turmas, quizzes por turma, cópia entre turmas e import/export."""
 
 import hashlib
 import json
@@ -10,47 +10,109 @@ from io import BytesIO
 
 from flask import jsonify, request, send_file, send_from_directory
 
-from routines import constants, files_handler
+from routines import classes, constants, files_handler, runtime
 from routines import logger  # noqa: F401  (configura console + arquivo)
 
 log = logging.getLogger(__name__)
 
 
-def api_list_quizzes():
-    """Lista os nomes dos quizzes disponíveis."""
-    return jsonify(files_handler.get_quiz_list())
+# -------------------- Turmas --------------------
+def api_list_classes():
+    """Lista as turmas e informa qual delas está em jogo, se houver."""
+    return jsonify({
+        'classes': classes.brief_list(),
+        'active': runtime.game_state.get('class_slug'),
+    })
 
 
-def api_get_quiz(quiz_name):
+def api_create_class():
+    """Cria uma turma."""
+    data = request.get_json(silent=True) or {}
+    slug, error = classes.create(data.get('name'))
+    if error:
+        return jsonify({'error': error}), 400
+    return jsonify({'slug': slug, 'name': classes.name_of(slug)}), 201
+
+
+def api_rename_class(class_slug):
+    """Renomeia uma turma (a pasta dos quizzes não muda)."""
+    data = request.get_json(silent=True) or {}
+    error = classes.rename(class_slug, data.get('name'))
+    if error:
+        return jsonify({'error': error}), 400
+    return jsonify({'slug': class_slug, 'name': classes.name_of(class_slug)})
+
+
+def api_delete_class(class_slug):
+    """Exclui uma turma e a pasta dos seus quizzes."""
+    error = classes.delete(class_slug)
+    if error:
+        return jsonify({'error': error}), 400
+    return jsonify({'message': 'Turma excluída.'})
+
+
+# -------------------- Quizzes da turma --------------------
+def api_list_quizzes(class_slug):
+    """Nomes dos quizzes de uma turma."""
+    if not classes.exists(class_slug):
+        return jsonify({'error': 'Turma não encontrada'}), 404
+    return jsonify(files_handler.get_quiz_list(class_slug))
+
+
+def api_list_quizzes_by_class():
+    """{slug: [nomes]} — usado pelo seletor de cópia entre turmas."""
+    return jsonify(files_handler.list_quizzes_by_class())
+
+
+def api_get_quiz(class_slug, quiz_name):
     """Retorna o JSON de um quiz."""
-    quiz = files_handler.load_quiz(quiz_name)
+    try:
+        quiz = files_handler.load_quiz(class_slug, quiz_name)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     if quiz is None:
         return jsonify({'error': 'Quiz not found'}), 404
     return jsonify(quiz)
 
 
-def api_save_quiz(quiz_name):
-    """Cria ou atualiza um quiz."""
-    data = request.get_json()
+def api_save_quiz(class_slug, quiz_name):
+    """Cria ou atualiza um quiz da turma."""
+    data = request.get_json(silent=True)
     if not data or 'title' not in data or 'questions' not in data:
         return jsonify({'error': 'Invalid quiz data'}), 400
 
-    files_handler.save_quiz(quiz_name, data)
+    try:
+        files_handler.save_quiz(class_slug, quiz_name, data)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     return jsonify({'message': 'Quiz saved successfully'})
 
 
-def api_delete_quiz(quiz_name):
+def api_delete_quiz(class_slug, quiz_name):
     """Exclui um quiz (arquivo principal, backup e temporário)."""
-    path = os.path.join(constants.QUIZZES_FOLDER, f'{quiz_name}.json')
-    if not os.path.exists(path):
+    try:
+        removed = files_handler.delete_quiz(class_slug, quiz_name)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if not removed:
         return jsonify({'error': 'Quiz not found'}), 404
-
-    for suffix in ('', '.bak', '.tmp'):
-        try:
-            os.remove(path + suffix)
-        except FileNotFoundError:
-            pass
     return jsonify({'message': 'Quiz deleted'})
+
+
+def api_copy_quiz(class_slug):
+    """Copia um quiz de outra turma para esta."""
+    data = request.get_json(silent=True) or {}
+    from_class = data.get('from_class')
+    from_quiz = data.get('quiz_name')
+    if not from_class or not from_quiz:
+        return jsonify({'error': 'Informe a turma e o quiz de origem.'}), 400
+
+    new_name, error = files_handler.copy_quiz(
+        from_class, from_quiz, class_slug, data.get('new_name')
+    )
+    if error:
+        return jsonify({'error': error}), 400
+    return jsonify({'quiz_name': new_name, 'message': 'Quiz copiado.'})
 
 
 def api_upload_image():
@@ -122,6 +184,10 @@ def api_import_quiz():
     if not file.filename.endswith('.quiz'):
         return jsonify({'error': 'O arquivo deve ter extensão .quiz'}), 400
 
+    class_slug = request.form.get('class') or request.args.get('class')
+    if not class_slug or not classes.exists(class_slug):
+        return jsonify({'error': 'Turma de destino não informada ou inexistente.'}), 400
+
     try:
         zip_data = file.read()
         with zipfile.ZipFile(BytesIO(zip_data), 'r') as zip_file:
@@ -156,18 +222,15 @@ def api_import_quiz():
                     # Figura referenciada mas não presente no pacote
                     q['figure'] = 'none'
 
-            # Define um nome único para o arquivo do quiz (evita sobrescrita)
+            # Define um nome único dentro da turma de destino
             base_name = quiz_data['title'].replace('/', '_').replace('\\', '_')
-            quiz_name = base_name
-            contador = 1
-            while os.path.exists(os.path.join(constants.QUIZZES_FOLDER, f'{quiz_name}.json')):
-                quiz_name = f"{base_name}_{contador}"
-                contador += 1
+            quiz_name = files_handler.unique_quiz_name(class_slug, base_name)
 
-            files_handler.save_quiz(quiz_name, quiz_data)
+            files_handler.save_quiz(class_slug, quiz_name, quiz_data)
 
             return jsonify({
                 'success': True,
+                'class': class_slug,
                 'quiz_name': quiz_name,
                 'quiz_data': quiz_data,
             })
@@ -179,10 +242,29 @@ def api_import_quiz():
 
 
 def register(app):
-    app.add_url_rule('/api/quizzes', 'api_list_quizzes', api_list_quizzes, methods=['GET'])
-    app.add_url_rule('/api/quiz/<quiz_name>', 'api_get_quiz', api_get_quiz, methods=['GET'])
-    app.add_url_rule('/api/quiz/<quiz_name>', 'api_save_quiz', api_save_quiz, methods=['POST'])
-    app.add_url_rule('/api/quiz/<quiz_name>', 'api_delete_quiz', api_delete_quiz, methods=['DELETE'])
+    # Turmas
+    app.add_url_rule('/api/classes', 'api_list_classes', api_list_classes, methods=['GET'])
+    app.add_url_rule('/api/classes', 'api_create_class', api_create_class, methods=['POST'])
+    app.add_url_rule('/api/classes/<class_slug>', 'api_rename_class', api_rename_class,
+                     methods=['POST'])
+    app.add_url_rule('/api/classes/<class_slug>', 'api_delete_class', api_delete_class,
+                     methods=['DELETE'])
+
+    # Quizzes de uma turma
+    app.add_url_rule('/api/quizzes-by-class', 'api_list_quizzes_by_class',
+                     api_list_quizzes_by_class, methods=['GET'])
+    app.add_url_rule('/api/classes/<class_slug>/quizzes', 'api_list_quizzes',
+                     api_list_quizzes, methods=['GET'])
+    app.add_url_rule('/api/classes/<class_slug>/quiz/<quiz_name>', 'api_get_quiz',
+                     api_get_quiz, methods=['GET'])
+    app.add_url_rule('/api/classes/<class_slug>/quiz/<quiz_name>', 'api_save_quiz',
+                     api_save_quiz, methods=['POST'])
+    app.add_url_rule('/api/classes/<class_slug>/quiz/<quiz_name>', 'api_delete_quiz',
+                     api_delete_quiz, methods=['DELETE'])
+    app.add_url_rule('/api/classes/<class_slug>/copy', 'api_copy_quiz', api_copy_quiz,
+                     methods=['POST'])
+
+    # Figuras e pacotes .quiz
     app.add_url_rule('/api/upload_image', 'api_upload_image', api_upload_image, methods=['POST'])
     app.add_url_rule('/static/quiz-figures/<filename>', 'uploaded_file', uploaded_file)
     app.add_url_rule('/api/quiz/export', 'api_export_quiz', api_export_quiz, methods=['POST'])

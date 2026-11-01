@@ -160,14 +160,36 @@ joinBtn.addEventListener('click', () => {
     const team = 'time A';
     if (nickname && team) {
         joinBtn.disabled = true; // Desabilita o botão
-        socket.emit('player_join', { 'nickname': nickname , 'team': team});
-        console.log("Jogador "+nickname+" entrou com o time "+team);
+        socket.emit('player_join', { 'nickname': nickname, 'team': team });
+        console.log("Jogador " + nickname + " pediu para entrar");
         myTeam = team;
     } else{
-        alert("Por favor adicione um nome e selecione um time!")
+        alert("Por favor adicione um nome!")
     }
     
 }); 
+
+// O servidor avisa se a sala está aberta e de qual turma é.
+// O aluno não escolhe turma: só precisa digitar o nome quando a sala abrir.
+const roomInfoEl = document.getElementById('room-info');
+const roomClassNameEl = document.getElementById('room-class-name');
+const roomClosedEl = document.getElementById('room-closed');
+
+socket.on('room_info', (data) => {
+    const aberta = !!(data && data.class_name);
+
+    roomClassNameEl.textContent = aberta ? data.class_name : '';
+    roomInfoEl.style.display = aberta ? 'block' : 'none';
+    roomClosedEl.style.display = aberta ? 'none' : 'block';
+
+    if (!aberta) {
+        joinBtn.disabled = true;
+    } else if (!sessionToken) {
+        joinBtn.disabled = false;
+        if (document.activeElement.tagName !== 'INPUT') nicknameInput.focus();
+    }
+});
+
 
 // Servidor confirmou a entrada
 

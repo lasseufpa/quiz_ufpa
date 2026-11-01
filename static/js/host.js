@@ -20,7 +20,18 @@ const scoreListEl = document.getElementById('score-list');
 const finalScoreListEl = document.getElementById('final-score-list');
 
 const quizSelect = document.getElementById('quiz-select');
+const classSelect = document.getElementById('class-select');
 const chartImg = document.getElementById('question-chart');
+
+// Sala de espera (fase 1 = escolher, fase 2 = QR code + lista)
+const lobbySetup = document.getElementById('lobby-setup');
+const lobbyWaiting = document.getElementById('lobby-waiting');
+const prepareBtn = document.getElementById('prepare-btn');
+const joinQrEl = document.getElementById('join-qr');
+const joinUrlEl = document.getElementById('join-url');
+const joinClassNameEl = document.getElementById('join-class-name');
+
+let reopenRoomOnLoad = false;
 
 const STATE_LOBBY 	    = 0;
 const STATE_QUESTION    = 1;
@@ -48,17 +59,129 @@ function renderMath() {
     }
 }
 
+async function loadClassList() {
+    const res = await fetch('/api/classes');
+    const data = await res.json();
+    classSelect.innerHTML = '<option value="">-- Selecionar Turma --</option>';
+    (data.classes || []).forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.slug;
+        opt.textContent = `${c.name} (${c.students} aluno${c.students === 1 ? '' : 's'})`;
+        classSelect.appendChild(opt);
+    });
+    if (data.active) {
+        classSelect.value = data.active;
+    }
+    await loadQuizList();
+
+    // Se o apresentador recarregou a página com alunos já na sala, reabre a sala
+    if (reopenRoomOnLoad) {
+        reopenRoomOnLoad = false;
+        showWaitingPhase();
+    }
+}
+
 async function loadQuizList() {
-    const res = await fetch('/api/quizzes');
-    const quizzes = await res.json();
+    const classSlug = classSelect.value;
     quizSelect.innerHTML = '<option value="">-- Selecionar Quiz --</option>';
+    if (!classSlug) {
+        updatePrepareBtn();
+        return;
+    }
+
+    const res = await fetch(`/api/classes/${encodeURIComponent(classSlug)}/quizzes`);
+    const quizzes = await res.json();
+    if (!Array.isArray(quizzes)) {
+        updatePrepareBtn();
+        return;
+    }
+
     quizzes.forEach(name => {
         const opt = document.createElement('option');
         opt.value = name;
         opt.textContent = name;
         quizSelect.appendChild(opt);
     });
+    updatePrepareBtn();
 }
+
+classSelect.addEventListener('change', loadQuizList);
+quizSelect.addEventListener('change', updatePrepareBtn);
+
+// -------------------- Sala de espera --------------------
+function selectedClassName() {
+    const opt = classSelect.options[classSelect.selectedIndex];
+    return opt ? opt.textContent.replace(/ \(\d+ alunos?\)$/, '') : '';
+}
+
+function updatePrepareBtn() {
+    prepareBtn.disabled = !(classSelect.value && quizSelect.value);
+}
+
+function updateStartBtn(total) {
+    const jogadores = (total === undefined) ? playerListEl.children.length : total;
+    startBtn.textContent = `Iniciar Jogo (${jogadores} Jogadores)`;
+    startBtn.disabled = jogadores === 0 || !quizSelect.value;
+}
+
+function renderJoinQr(url) {
+    joinQrEl.innerHTML = '';
+    if (typeof qrcode !== 'function') {
+        console.warn('Gerador de QR code não carregado.');
+        return;
+    }
+    try {
+        const qr = qrcode(0, 'M');   // 0 = tamanho automático
+        qr.addData(url);
+        qr.make();
+        joinQrEl.innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2 });
+    } catch (err) {
+        console.warn('Falha ao gerar o QR code:', err);
+    }
+}
+
+// Mostra o QR/endereço e a lista de quem foi entrando
+function showWaitingPhase() {
+    const base = lobbyView.dataset.joinBase || window.location.origin;
+    const slug = classSelect.value;
+
+    joinUrlEl.textContent = base;
+    joinClassNameEl.textContent = slug ? selectedClassName() : '(selecione a turma)';
+    renderJoinQr(base);
+
+    lobbySetup.style.display = 'none';
+    lobbyWaiting.style.display = 'block';
+    updateStartBtn();
+}
+
+function openRoom() {
+    if (!classSelect.value || !quizSelect.value) {
+        alert('Escolha a turma e o quiz antes de abrir a sala.');
+        return;
+    }
+    // O servidor passa a aceitar os alunos dessa turma
+    socket.emit('open_room', { 'class': classSelect.value });
+    showWaitingPhase();
+}
+
+function closeRoom() {
+    // Com alunos na sala não dá para voltar: a sala precisa ficar aberta
+    if (playerListEl.children.length > 0) {
+        alert('Já há alunos na sala: não dá para trocar a turma/quiz agora.');
+        return;
+    }
+
+    lobbyWaiting.style.display = 'none';
+    lobbySetup.style.display = 'block';
+    updatePrepareBtn();
+    socket.emit('close_room');
+}
+
+prepareBtn.addEventListener('click', openRoom);
+document.getElementById('change-selection').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeRoom();
+});
 
 // Atualiza a lista de jogadores no lobby
 socket.on('update_player_list', (players) => {
@@ -69,8 +192,7 @@ socket.on('update_player_list', (players) => {
         li.textContent = name;
         playerListEl.appendChild(li);
     });
-    startBtn.textContent = `Iniciar Jogo (${players.length} Jogadores)`;
-    startBtn.disabled = players.length === 0;
+    updateStartBtn(players.length);
 
     forceEndBtn.style.display = players.length > 0 ? 'block' : 'none';
 
@@ -92,10 +214,12 @@ forceEndResultsBtn.addEventListener('click', forceEndQuiz);
 startBtn.addEventListener('click', (e) => {
 const selectedValue = quizSelect.value;
 
-if (selectedValue === "") {
+if (!classSelect.value) {
+    alert('Selecione a turma!');
+} else if (selectedValue === "") {
     alert('Selecione um quiz válido!');
 } else {
-    socket.emit('start_game', {'quiz-name' : quizSelect.value});
+    socket.emit('start_game', { 'quiz-name': quizSelect.value, 'class': classSelect.value });
 }
 });
 
@@ -480,6 +604,11 @@ socket.on('resume_host_state', (data) => {
     switch(gameState) {
         case STATE_LOBBY:
             lobbyView.style.display = 'block';
+            if (totalPlayers > 0) {
+                // Alunos já entraram: mostra o QR code e a lista, sem os seletores
+                reopenRoomOnLoad = true;
+                showWaitingPhase();
+            }
             // Force end button visibility based on players
             if (forceEndBtn && totalPlayers > 0) {
                 forceEndBtn.style.display = 'block';
@@ -614,4 +743,4 @@ modal.addEventListener('click', (e) => {
 // Attach button listener
 document.getElementById('show-question-again-btn').addEventListener('click', showQuestionAgain);
 
-    loadQuizList();
+    loadClassList();

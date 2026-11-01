@@ -75,43 +75,78 @@ senhas e os CSVs de resultado continuam lá mesmo se o container for apagado.
 
 | Tela | Endereço | Para quê serve |
 |------|----------|----------------|
-| **Aluno** | `http://<ip>:5000` | Informar o nome e responder às perguntas |
+| **Aluno** | `http://<ip>:5000` | Informar o nome e responder (quando a sala está aberta) |
 | **Apresentador** | `http://localhost:5000/host` | Conduzir a partida (pede senha) |
-| **Administração** | `http://localhost:5000/admin` | Cadastrar os alunos (pede senha) |
-| **Editor** | `http://localhost:5000/editor` | Criar e editar quizzes |
+| **Administração** | `http://localhost:5000/admin` | Cadastrar os alunos de cada turma (pede senha) |
+| **Editor** | `http://localhost:5000/editor` | Criar turmas, quizzes e copiar quizzes entre turmas |
 
-A senha do apresentador e da administração é a mesma (**ADMIN**).
+A senha do apresentador e da administração é a mesma: a que você definiu na
+primeira vez que abriu o sistema.
+
+## Turmas
+
+Um professor pode ter **várias turmas**. Cada turma tem:
+
+- a **sua própria lista de alunos**;
+- os **seus próprios quizzes** (pastas separadas, um quiz não aparece na turma
+  de outra pessoa por engano);
+- os **seus próprios resultados** (o CSV final leva o nome da turma).
+
+Criar, renomear e excluir turmas é feito na tela *Editor*, na primeira linha:
+
+- **Nova turma** — dá um nome (ex.: *Terapia 2A*) e a turma já fica selecionada.
+- **Renomear** — muda só o nome exibido; os quizzes e alunos continuam onde
+  estão.
+- **Excluir turma** — apaga a turma **com todos os quizzes dela**. Não dá para
+  excluir a última turma existente.
+
+Na primeira execução, o sistema cria uma turma chamada **Turma padrão** e move
+para ela os quizzes e alunos do formato antigo (sem turmas).
+
+Apenas **uma turma joga por vez**: é o professor quem define qual turma está na
+sala, e o aluno **não precisa escolher turma** — ele só digita o nome.
 
 ## Como rodar uma partida
 
-1. **Antes da aula:** cadastre os alunos na tela *Administração* e prepare o
-   quiz na tela *Editor*.
-2. Abra a tela do **Apresentador**, escolha o quiz e aguarde os alunos entrarem
-   (a lista de quem chegou aparece na tela).
-3. Os alunos abrem o endereço no celular ou notebook e digitam o nome
-   cadastrado.
+1. **Antes da aula:** crie a turma no *Editor*, cadastre os alunos dela na tela
+   *Administração* e prepare o quiz.
+2. Abra a tela do **Apresentador**, escolha a **turma** e o **quiz** e clique em
+   **Aguardar jogadores**. Os seletores somem e aparece o **QR code** com o
+   endereço da sala.
+3. Os alunos apontam a câmera do celular para o QR code (ou digitam o endereço),
+   veem a turma na tela e digitam o nome cadastrado. Cada um que entra aparece
+   na lista do apresentador.
 4. Clique em **Iniciar Jogo**. A cada pergunta, o apresentador vê quantos já
    responderam e clica em **Mostrar Resultados** para revelar a resposta certa,
    o gráfico e o pódio.
 5. Clique em **Próxima Pergunta** para seguir. No fim, o placar aparece para
    todos.
 
+Enquanto a sala não é aberta, a tela do aluno mostra *"Aguardando o professor
+abrir a sala..."* e o botão de entrar fica desabilitado. Se precisar trocar a
+turma ou o quiz antes de começar, use o link **↩ trocar turma/quiz** (só
+funciona enquanto ninguém entrou).
+
 ## Cadastrar alunos
 
-**Só entra quem estiver cadastrado.** Na tela *Administração*
-(`http://localhost:5000/admin`, com a senha ADMIN):
+**Só entra quem estiver cadastrado na turma.** Na tela *Administração*
+(`http://localhost:5000/admin`, com a senha do professor):
 
-- **Adicionar** — digite o nome e clique em *Adicionar*.
-- **Editar** — clique em *Editar*, mude o nome e clique em *Salvar*.
-- **Remover** — clique em *Remover* e confirme.
+1. Escolha a **turma** no seletor do topo.
+2. **Adicionar** — digite o nome e clique em *Adicionar*.
+3. **Editar** — clique em *Editar*, mude o nome e clique em *Salvar*.
+4. **Remover** — clique em *Remover* e confirme.
 
-O cadastro é único e não diferencia maiúsculas de minúsculas (`Ana` e `ana` são
-a mesma pessoa).
-
+Cada turma tem a sua própria lista: um aluno cadastrado em *Terapia 2A* não
+consegue entrar na *Turma padrão*, e vice-versa. Nomes não diferenciam
+maiúsculas de minúsculas (`Ana` e `ana` são a mesma pessoa).
 ## Criar e editar quizzes
 
 Abra a tela *Editor* (`http://localhost:5000/editor`). Tudo é feito pela
 interface — não é preciso mexer em arquivos.
+
+1. Escolha a **turma** na primeira linha.
+2. Escolha o quiz na segunda linha (ou deixe em *-- Novo Quiz --*).
 
 - **Novo** / **Excluir** — começar um quiz do zero ou apagar o selecionado.
 - **+ Adicionar Pergunta** — cada pergunta tem um texto (aceita várias linhas),
@@ -119,6 +154,23 @@ interface — não é preciso mexer em arquivos.
 - **Figura (opcional)** — escolha uma imagem do computador; ela aparece na
   pergunta para os alunos.
 - **Salvar Quiz** — grave o quiz. Sem salvar, as mudanças são perdidas.
+
+Os quizzes ficam na pasta da turma (`static/quizzes/<turma>/`), por isso a mesma
+lista só é vista por quem abre aquela turma.
+
+### Copiar um quiz de outra turma
+
+Use **📥 Copiar de outra turma**. Na janela que abre:
+
+1. escolha a **turma de origem**;
+2. escolha o **quiz**;
+3. ajuste o nome com que ele vai ficar na turma atual (opcional);
+4. clique em **Copiar para esta turma**.
+
+O quiz copiado é independente: editar um não altera o outro. Se já existir um
+quiz com aquele nome na turma de destino, é criada uma cópia numerada
+(`ondas_1`), sem sobrescrever nada.
+
 
 ### Conferir antes da aula
 
@@ -178,15 +230,23 @@ Em cada pergunta, clique em **Mostrar Resultados** para revelar:
 
 No fim do quiz — ou ao clicar em **Finalizar Quiz** — todos veem o placar final,
 e um arquivo CSV com as notas é gravado automaticamente na pasta `scores/`,
-pronto para levar as notas de participação para a planilha.
+pronto para levar as notas de participação para a planilha. O nome do arquivo
+inclui a turma, o quiz e a data
+(`scores_Terapia_2A_Ondas_20261101.csv`), então resultados de turmas diferentes
+nunca se misturam.
 
 ## Se algo der errado
 
 - **Recarreguei a página e "perdi" o jogo.** Não perdeu: quem recarrega volta
   para onde estava, mantendo pontos e respostas. Se o apresentador cair, a
   partida fica pausada até ele voltar.
-- **O aluno não consegue entrar.** Confira se o nome dele está cadastrado na
-  tela *Administração* e se foi digitado igual ao cadastro.
+- **O aluno não consegue entrar.** Veja se a sala já foi aberta (**Aguardar
+  jogadores**) e se o nome dele está cadastrado na turma escolhida no
+  apresentador (tela *Administração* + seletor de turma).
+- **Não consigo voltar para trocar turma/quiz.** O link **↩ trocar turma/quiz**
+  só funciona enquanto ninguém entrou na sala.
+- **Não consigo excluir uma turma.** A última turma não pode ser excluída — crie
+  outra antes.
 - **Os alunos não abrem o endereço.** Todos precisam estar na mesma rede do seu
   computador, e o aluno deve usar o IP que aparece no terminal (nunca
   `localhost`).
@@ -198,6 +258,10 @@ pronto para levar as notas de participação para a planilha.
 - **As fórmulas aparecem como texto (`$x[n]$`).** O MathJax não carregou — em
   geral é falta de internet. Baixe a cópia local indicada em
   *Escrever fórmulas matemáticas*.
+- **Um arquivo JSON foi corrompido.** Alunos, turmas, quizzes e o estado da
+  partida são gravados de forma atômica e guardam uma cópia `.bak` da última
+  versão válida. Se o arquivo principal quebrar, a cópia é usada e o principal é
+  restaurado automaticamente (o evento fica registrado em `logs/server.log`).
 
 ## Onde ficam os logs
 

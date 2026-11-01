@@ -17,3 +17,4 @@ static/@mathjax
 logs/
 *.json.bak
 *.json.tmp
+*/quizzes/*

@@ -25,6 +25,7 @@ def clear_game_state():
         'answers_time': {},
         'connected': {},        # {sid: True/False} — jogador online/offline
         'question_token': 0,    # invalida timers de perguntas antigas
+        'class_slug': None,     # turma da partida atual
         'PLAYER_SESSIONS': {}
     }
     return game_state

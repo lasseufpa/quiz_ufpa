@@ -4,6 +4,12 @@
 {% block content %}
 <div id="join-view" style="display: none;">
     <h1>Entrar no Jogo</h1>
+    <p id="room-info" style="display: none;">
+        Turma: <strong id="room-class-name"></strong>
+    </p>
+    <p id="room-closed" style="color: #b26a00;">
+        Aguardando o professor abrir a sala...
+    </p>
     <input type="text" id="nickname-input" placeholder="Seu nome">
     <br>
     <select id="team-select" style="display: none;">
