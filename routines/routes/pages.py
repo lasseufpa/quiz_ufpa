@@ -40,8 +40,14 @@ def editor_view():
     return render_template('editor.html')
 
 
+def tutorial():
+    """Guias de uso: apresentador, editor, administrador e aluno."""
+    return render_template('tutorials.html')
+
+
 def register(app):
     app.add_url_rule('/', 'player_join', player_join)
     app.add_url_rule('/host', 'host_view', host_view)
     app.add_url_rule('/check_session', 'check_session', check_session)
     app.add_url_rule('/editor', 'editor_view', editor_view)
+    app.add_url_rule('/guia', 'tutorial', tutorial)

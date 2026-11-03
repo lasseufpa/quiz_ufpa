@@ -79,9 +79,20 @@ senhas e os CSVs de resultado continuam lá mesmo se o container for apagado.
 | **Apresentador** | `http://localhost:5000/host` | Conduzir a partida (pede senha) |
 | **Administração** | `http://localhost:5000/admin` | Cadastrar os alunos de cada turma (pede senha) |
 | **Editor** | `http://localhost:5000/editor` | Criar turmas, quizzes e copiar quizzes entre turmas |
+| **Guias** | `http://localhost:5000/guia` | Tutoriais de uso de cada tela |
 
 A senha do apresentador e da administração é a mesma: a que você definiu na
 primeira vez que abriu o sistema.
+
+Dentro da tela do apresentador há dois botões no canto superior esquerdo:
+
+- **☰** — abre o menu lateral, com atalhos para os guias de uso e para as
+  outras telas (sempre em outra aba, para não pausar a partida).
+- **?** — abre direto o guia do apresentador.
+
+Os guias também ficam em `http://localhost:5000/guia`, em abas: apresentador,
+editor, administrador e aluno. Cada aba mostra só o tutorial escolhido, e
+`/guia#editor` (por exemplo) abre direto naquela aba.
 
 ## Turmas
 
@@ -237,6 +248,8 @@ nunca se misturam.
 
 ## Se algo der errado
 
+- **Preciso de ajuda dentro do sistema.** Clique em **?** na tela do
+  apresentador ou abra `/guia` — os tutoriais explicam cada tela, passo a passo.
 - **Recarreguei a página e "perdi" o jogo.** Não perdeu: quem recarrega volta
   para onde estava, mantendo pontos e respostas. Se o apresentador cair, a
   partida fica pausada até ele voltar.

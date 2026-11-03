@@ -1,0 +1,307 @@
+{% extends "layout.html" %}
+{% block title %}Guias de uso - Quiz UFPA{% endblock %}
+
+{% block content %}
+<style>
+    .guide {
+        text-align: left;
+    }
+
+    .guide-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 28px;
+    }
+
+    .guide-tab {
+        padding: 10px 16px;
+        margin: 0;
+        border-radius: 22px;
+        background: #f4f5fb;
+        color: #4a4a4a;
+        border: 1px solid #e0e3f0;
+        font-family: inherit;
+        font-size: 0.95rem;
+        font-weight: 700;
+        text-transform: none;
+        letter-spacing: 0;
+        box-shadow: none;
+        cursor: pointer;
+    }
+
+    .guide-tab:hover:not(.active) {
+        background: #e9ecfa;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .guide-tab.active {
+        background: #667eea;
+        border-color: #667eea;
+        color: #fff;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
+    }
+
+    .guide-tab.active:hover {
+        transform: none;
+    }
+
+    .guide-section {
+        margin-bottom: 45px;
+        scroll-margin-top: 20px;
+    }
+
+    .guide-section[hidden] {
+        display: none !important;
+    }
+
+    .guide-section h2 {
+        border-bottom: 3px solid #667eea;
+        padding-bottom: 8px;
+        text-align: left;
+        margin-bottom: 18px;
+        font-size: 1.5rem;
+    }
+
+    .guide-section h4 {
+        margin: 22px 0 8px;
+        color: #3b4cca;
+        font-size: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .guide-section ol,
+    .guide-section ul {
+        margin: 0 0 10px 22px;
+        line-height: 1.65;
+    }
+
+    .guide-section li {
+        margin-bottom: 6px;
+    }
+
+    .guide-section p {
+        line-height: 1.65;
+        margin-bottom: 10px;
+    }
+
+    .guide-section code {
+        background: #f1f1f5;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.9em;
+    }
+
+    .tip {
+        background: #fff8e1;
+        border-left: 4px solid #ffb300;
+        padding: 12px 14px;
+        border-radius: 6px;
+        margin: 14px 0;
+        font-size: 0.95rem;
+        line-height: 1.55;
+    }
+
+    .tip strong {
+        color: #8a6100;
+    }
+
+    .guide-back {
+        display: block;
+        text-align: center;
+        margin-top: 10px;
+        color: #666;
+        font-size: 0.9rem;
+    }
+</style>
+
+<div class="guide">
+    <h1>Guias de uso</h1>
+
+    <nav class="guide-tabs" role="tablist" aria-label="Escolha o guia">
+        <button class="guide-tab active" role="tab" aria-selected="true"
+                aria-controls="apresentador" data-guide="apresentador">🎤 Apresentador</button>
+        <button class="guide-tab" role="tab" aria-selected="false"
+                aria-controls="editor" data-guide="editor">📝 Editor</button>
+        <button class="guide-tab" role="tab" aria-selected="false"
+                aria-controls="administrador" data-guide="administrador">👥 Administrador</button>
+        <button class="guide-tab" role="tab" aria-selected="false"
+                aria-controls="aluno" data-guide="aluno">📱 Aluno</button>
+    </nav>
+
+    <!-- ================= APRESENTADOR ================= -->
+    <section class="guide-section" id="apresentador">
+        <h2>Guia do apresentador</h2>
+        <p>A tela do apresentador (<code>/host</code>) é onde você conduz a partida:
+            abre a sala, espera os alunos e controla as perguntas.</p>
+
+        <h4>Antes da aula</h4>
+        <ol>
+            <li>Crie a turma e os quizzes na tela <strong>Editor</strong>.</li>
+            <li>Cadastre os alunos dessa turma na tela <strong>Administração</strong>.</li>
+        </ol>
+
+        <h4>Abrindo a sala</h4>
+        <ol>
+            <li>Abra <code>http://localhost:5000/host</code> e entre com a senha do professor.</li>
+            <li>Escolha a <strong>turma</strong> (cada opção mostra quantos alunos ela tem).</li>
+            <li>Escolha o <strong>quiz</strong>.</li>
+            <li>Clique em <strong>Aguardar jogadores</strong>. Os seletores somem e aparecem o
+                <strong>QR code</strong> e o endereço da sala.</li>
+            <li>Os alunos apontam a câmera do celular para o QR code (ou digitam o endereço).
+                Eles <strong>não escolhem turma</strong> — só digitam o nome cadastrado.</li>
+            <li>Cada aluno que entra aparece na lista. O botão
+                <strong>Iniciar Jogo (N jogadores)</strong> libera quando há pelo menos um.</li>
+        </ol>
+
+        <div class="tip">
+            <strong>Escolheu errado?</strong> Use o link <strong>↩ trocar turma/quiz</strong>.
+            Ele só funciona enquanto ninguém entrou na sala.
+        </div>
+
+        <h4>Durante a partida</h4>
+        <ul>
+            <li>A pergunta aparece com a figura (se houver) e a contagem de respostas recebidas.</li>
+            <li>Os primeiros <strong>10 segundos</strong> são de leitura: as respostas ficam bloqueadas.</li>
+            <li>Depois disso os alunos têm <strong>30 segundos</strong> para responder.</li>
+            <li><strong>Mostrar Resultados</strong> revela a alternativa correta, o gráfico de
+                distribuição das respostas e o pódio da pergunta.</li>
+            <li><strong>📋 Mostrar Pergunta Novamente</strong> reabre a pergunta para reler com a turma.</li>
+            <li><strong>Próxima Pergunta</strong> avança. Depois da última, o placar final aparece
+                para todos e o resultado é gravado em um CSV.</li>
+            <li><strong>Finalizar Quiz</strong> encerra a partida a qualquer momento.</li>
+        </ul>
+
+        <h4>Como a pontuação funciona</h4>
+        <ul>
+            <li><strong>Avaliação</strong> — 1 ponto por resposta certa. É a nota de participação.</li>
+            <li><strong>Competição</strong> — até 200 pontos extras por acerto
+                <em>rápido</em>: quem acerta primeiro leva mais, quem erra não pontua.</li>
+        </ul>
+
+        <h4>Se algo der errado</h4>
+        <ul>
+            <li>Recarregar a página <strong>não perde nada</strong>: a partida volta na pergunta
+                em que estava.</li>
+            <li>Se o navegador do apresentador fechar, a partida fica pausada e continua quando
+                ele reabrir.</li>
+            <li>Um aluno que chega atrasado pode entrar no meio da partida: começa com 0 ponto e
+                participa a partir da próxima pergunta.</li>
+        </ul>
+    </section>
+
+    <!-- ================= EDITOR ================= -->
+    <section class="guide-section" id="editor" hidden>
+        <h2>Guia do editor de quizzes</h2>
+        <p>Na tela <strong>Editor</strong> (<code>/editor</code>) você organiza as turmas e cria
+            os quizzes. Tudo é feito pela interface.</p>
+
+        <h4>Turmas (primeira linha)</h4>
+        <ul>
+            <li><strong>Nova turma</strong> — dá um nome (ex.: <em>Terapia 2A</em>).</li>
+            <li><strong>Renomear</strong> — muda só o nome exibido; alunos e quizzes continuam onde estão.</li>
+            <li><strong>Excluir turma</strong> — apaga a turma <strong>e todos os quizzes dela</strong>.
+                A última turma não pode ser excluída.</li>
+        </ul>
+        <p>Cada turma tem a sua própria lista de alunos e a sua própria pasta de quizzes. Apenas
+            uma turma joga por vez, e quem define qual é o professor, ao abrir a sala.</p>
+
+        <h4>Quizzes (segunda linha)</h4>
+        <ol>
+            <li>Escolha um quiz existente ou deixe em <em>-- Novo Quiz --</em>.</li>
+            <li>Preencha o <strong>título</strong>.</li>
+            <li>Em cada pergunta: o texto, as alternativas e o botão de rádio que marca a
+                <strong>alternativa correta</strong>.</li>
+            <li><strong>+ Adicionar Pergunta</strong> e <strong>+ Adicionar opção</strong> criam mais
+                itens (as alternativas aparecem como A, B, C, D).</li>
+            <li><strong>Figura (opcional)</strong> — escolha um PNG/JPG/GIF do computador.</li>
+            <li><strong>Salvar Quiz</strong> grava tudo. Sem salvar, as mudanças são perdidas.</li>
+        </ol>
+
+        <h4>Conferir antes da aula</h4>
+        <p>Clique em <strong>👁 Pré-visualizar</strong> para ver exatamente o que o aluno verá, com a
+            alternativa correta destacada. Use <strong>← Anterior</strong> / <strong>Próxima →</strong>
+            (ou as setas do teclado) e <strong>Esc</strong> para fechar. Cada pergunta também tem o
+            seu próprio botão de pré-visualização.</p>
+
+        <h4>Fórmulas matemáticas</h4>
+        <p>Escreva a fórmula entre <code>$...$</code>. Por exemplo:
+            <code>$x[n] = \sum_{k} x[k]\,h[n-k]$</code>. Ela aparece formatada na pré-visualização
+            e nas telas do aluno e do apresentador.</p>
+        <div class="tip">
+            <strong>Sem internet na sala?</strong> O MathJax precisa estar na cópia local
+            (<code>static/mathjax</code>). Veja o README do projeto para baixá-lo.
+        </div>
+
+        <h4>Copiar e compartilhar quizzes</h4>
+        <ul>
+            <li><strong>📥 Copiar de outra turma</strong> — escolha a turma de origem, o quiz e o nome
+                com que ele vai ficar aqui. A cópia é independente: editar uma não altera a outra.
+                Se o nome já existir, é criada uma cópia numerada (<code>ondas_1</code>).</li>
+            <li><strong>📤 Exportar Quiz</strong> — gera um arquivo <code>.quiz</code> com as figuras
+                dentro, pronto para enviar por e-mail.</li>
+            <li><strong>📂 Importar Quiz</strong> — abre um <code>.quiz</code> recebido, sem
+                sobrescrever os quizzes existentes.</li>
+        </ul>
+    </section>
+
+    <!-- ================= ADMINISTRADOR ================= -->
+    <section class="guide-section" id="administrador" hidden>
+        <h2>Guia do administrador</h2>
+        <p>Na tela <strong>Administração</strong> (<code>/admin</code>) você cadastra os alunos de
+            cada turma. Só entra na partida quem estiver cadastrado na turma da sala aberta.</p>
+
+        <ol>
+            <li>Abra <code>http://localhost:5000/admin</code> e entre com a senha do professor
+                (a mesma do apresentador).</li>
+            <li>Escolha a <strong>turma</strong> no seletor do topo — a lista mostra apenas os alunos
+                dela.</li>
+            <li><strong>Adicionar</strong> — digite o nome e clique em <em>Adicionar</em>.</li>
+            <li><strong>Editar</strong> — clique em <em>Editar</em>, mude o nome e clique em <em>Salvar</em>.</li>
+            <li><strong>Remover</strong> — clique em <em>Remover</em> e confirme.</li>
+        </ol>
+
+        <div class="tip">
+            <strong>Maiúsculas não importam:</strong> <code>Ana</code> e <code>ana</code> são a mesma
+            pessoa, e nomes repetidos são recusados.
+        </div>
+
+        <h4>Cadastrar durante a partida</h4>
+        <ul>
+            <li>Pode cadastrar a qualquer momento: nada do jogo em andamento é afetado, e o aluno novo
+                já consegue entrar (começando com 0 ponto).</li>
+            <li>Remover alguém que <em>está jogando</em> não o tira da partida nem apaga os pontos dele —
+                só impede novas entradas com aquele nome.</li>
+            <li>Trocar o nome de quem está jogando não altera o placar da partida atual: o nome que
+                aparece na tela e no CSV é o do momento em que ele entrou.</li>
+        </ul>
+    </section>
+
+    <!-- ================= ALUNO ================= -->
+    <section class="guide-section" id="aluno" hidden>
+        <h2>Guia do aluno</h2>
+        <ol>
+            <li>Abra o endereço da sala (ou leia o QR code mostrado pelo professor).</li>
+            <li>Enquanto a sala não abre, aparece <em>"Aguardando o professor abrir a sala..."</em>.
+                Assim que ela abre, o nome da turma aparece na tela.</li>
+            <li>Digite o <strong>nome cadastrado</strong> e toque em <strong>Entrar</strong>.</li>
+            <li>Aguarde o professor iniciar. A cada pergunta, toque na letra da alternativa
+                (A, B, C ou D).</li>
+            <li>Se a página recarregar, você volta para a mesma sessão, com os pontos que já tinha.</li>
+        </ol>
+        <div class="tip">
+            <strong>Nome recusado?</strong> Confira com o professor se você está cadastrado na turma
+            certa — a mensagem indica a turma da sala.
+        </div>
+    </section>
+
+    <a class="guide-back" href="{{ url_for('host_view') }}">← voltar para o painel do apresentador</a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/guides.js') }}"></script>
+{% endblock %}
