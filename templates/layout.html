@@ -36,7 +36,10 @@
         .container {
             width: 100%;
             max-width: 800px;
-            margin: 0 auto;
+            /* "auto" nas duas direções centraliza quando o conteúdo cabe e
+               NÃO corta quando ele é mais alto que a tela (ex.: placar final
+               com muitos jogadores, que antes escondia o botão no rodapé). */
+            margin: auto;
             background-color: #ffffff;
             border-radius: 16px;
             /* Mais arredondado */
@@ -105,6 +108,143 @@
             box-shadow: none;
         }
 
+        /* --- ★ SISTEMA DE BOTÕES (.btn) ★ ---
+           Use .btn + uma variante de cor + opcionalmente um tamanho.
+           Todas as páginas (editor, admin, host...) devem usar estas classes
+           em vez de estilos inline, para manter tamanhos e espaçamentos iguais. */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin: 0;
+            padding: 10px 20px;
+            min-height: 46px;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 700;
+            line-height: 1.2;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+        }
+
+        .btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            background-color: #ccc;
+            color: #666;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Tamanhos */
+        .btn-sm {
+            padding: 6px 12px;
+            min-height: 34px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            letter-spacing: 0.3px;
+        }
+
+        .btn-lg {
+            padding: 14px 28px;
+            min-height: 56px;
+            font-size: 1rem;
+        }
+
+        /* Botão apenas com ícone (fechar modais, remover opção) */
+        .btn-icon {
+            width: 40px;
+            height: 40px;
+            min-height: 0;
+            padding: 0;
+            border-radius: 50%;
+            font-size: 1rem;
+            letter-spacing: 0;
+            background-color: #f1f1f1;
+            color: #555;
+        }
+
+        .btn-icon:hover:not(:disabled) {
+            background-color: #e2e2e2;
+            box-shadow: none;
+        }
+
+        /* Variantes de cor */
+        .btn-primary   { background-color: #007bff; color: #fff; }
+        .btn-success   { background-color: #28a745; color: #fff; }
+        .btn-danger    { background-color: #dc3545; color: #fff; }
+        .btn-warning   { background-color: #ffc107; color: #212529; }
+        .btn-secondary { background-color: #6c757d; color: #fff; }
+        .btn-info      { background-color: #17a2b8; color: #fff; }
+        .btn-purple    { background-color: #6f42c1; color: #fff; }
+
+        /* Agrupamentos */
+        .btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Linha de formulário (input/select + botão com a mesma altura) */
+        .form-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .form-row input[type="text"],
+        .form-row select {
+            width: auto;
+            min-width: 240px;
+            height: 46px;
+            margin-bottom: 0;
+            padding: 0 14px;
+            font-size: 1rem;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .form-row .btn {
+            min-height: 46px;
+        }
+
+        /* Select padronizado (mesma altura dos botões) */
+        .select-field {
+            height: 46px;
+            min-width: 240px;
+            padding: 0 14px;
+            font-family: inherit;
+            font-size: 1rem;
+            color: #333;
+            background-color: #fff;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .select-field:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 10px rgba(0, 123, 255, 0.2);
+            outline: none;
+        }
+
         input[type="text"],
         input[type="password"] {
             font-family: 'Montserrat', sans-serif;
@@ -151,6 +291,23 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            /* Rede de segurança: o flex descarta espaços entre filhos, então
+               se a alternativa tiver mais de um elemento (rótulo + conteúdo)
+               o gap mantém a separação. */
+            gap: 0.4em;
+            line-height: 1.3;
+            min-width: 0;
+            text-align: center;
+        }
+
+        /* Conteúdo da alternativa (texto + LaTeX + texto) em um único fluxo.
+           O <span> é essencial: sem ele o MathJax insere irmãos soltos e, em
+           um container flex, cada pedaço vira um item independente — a fórmula
+           sai da caixa e as palavras ficam fora de ordem. */
+        .option-btn > .option-content {
+            display: block;
+            max-width: 100%;
+            overflow-wrap: break-word;
         }
 
         .option-btn:not(:disabled):hover {
@@ -284,44 +441,75 @@
         }
 
         .user-list-item .edit-form input {
-            font-size: 16px;
-            padding: 5px;
-            border: 1px solid #007bff;
-            border-radius: 4px;
+            width: 100%;
+            height: 34px;
+            padding: 0 10px;
+            font-size: 0.95rem;
+            border: 2px solid #ddd;
+            border-radius: 6px;
         }
 
-        .user-list-item .actions button {
-            margin-left: 5px;
-            padding: 5px 10px;
-            font-size: 12px;
+        .user-list-item .edit-form input:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 8px rgba(0, 123, 255, 0.2);
+            outline: none;
         }
 
+        .user-list-item .actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        /* Variantes do painel de admin — reaproveitam o sistema .btn */
         .btn-edit {
             background-color: #ffc107;
-            color: black;
+            color: #212529;
         }
 
         .btn-remove {
             background-color: #dc3545;
-            color: white;
+            color: #fff;
         }
 
         .btn-save {
             background-color: #28a745;
-            color: white;
+            color: #fff;
         }
 
         .btn-cancel {
             background-color: #6c757d;
-            color: white;
+            color: #fff;
         }
+        /* --- Tipografia de fórmulas (MathJax) ---
+           O MathJax herda font-size, font-weight e text-decoration do elemento
+           pai. Sem estes ajustes, fórmulas dentro de <button> (alternativas) e
+           de <h3> (enunciados) ficavam com 160% do tamanho e em negrito,
+           estourando a caixa e quebrando a fórmula no meio. */
         mjx-container {
-        font-size: 160% !important;
-        font-weight: 600 !important;
+            font-size: 1.05em !important;
+            font-weight: normal !important;
+            max-width: 100%;
         }
 
-        mjx-mi, mjx-mo, mjx-mn {
-        font-weight: 600 !important;
+        /* Fórmulas em bloco ($$...$$) ficam centralizadas e, se forem mais
+           largas que o cartão, rolam na horizontal em vez de vazar. */
+        mjx-container[display="true"] {
+            display: block;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 2px 0;
+        }
+
+        /* O MathJax insere <mjx-break> nos operadores para permitir quebra de
+           linha, e esse elemento vem com white-space: normal. Resultado: em um
+           enunciado/alternativa a fórmula era cortada no meio, por exemplo
+           "(A^2/2)cos(ω" na primeira linha e "₀ℓ)" na segunda.
+           Em fórmulas inline mantemos a fórmula inteira (o parágrafo é que
+           quebra antes dela). Em bloco ($$...$$) as quebras continuam valendo. */
+        mjx-container:not([display="true"]) mjx-break {
+            white-space: nowrap !important;
         }
     </style>
     <!-- MathJax: a configuração precisa vir ANTES do carregamento da biblioteca -->

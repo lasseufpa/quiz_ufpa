@@ -90,20 +90,36 @@ function renderQuestions() {
         <div class="question-header">
             <strong>Pergunta ${idx+1}</strong>
             <div class="question-header-actions">
-                <button class="preview-question-btn" data-idx="${idx}" style="background:#6f42c1;color:white;">👁 Pré-visualizar</button>
-                <button class="remove-question-btn" data-idx="${idx}" style="background:#dc3545;color:white;">Remover</button>
+                <button class="preview-question-btn btn btn-sm btn-purple" data-idx="${idx}">👁 Pré-visualizar</button>
+                <button class="remove-question-btn btn btn-sm btn-danger" data-idx="${idx}">Remover</button>
             </div>
         </div>
         <label>Texto da pergunta:</label>
         <textarea class="question-text" style="width:100%; margin-bottom:10px;" rows="3">${escapeHtml(q.text)}</textarea>
-        
+
+        <div class="reading-row">
+            <label for="reading-${idx}">Tempo de leitura (s):</label>
+            <input type="number" id="reading-${idx}" class="reading-time" data-idx="${idx}"
+                   min="0" max="300" step="1" placeholder="auto"
+                   value="${q.reading_time == null ? '' : q.reading_time}">
+            <small class="reading-hint">vazio = automático pelo tamanho do enunciado (≈15 caracteres/s; 0 libera na hora)</small>
+        </div>
+
+        <div class="reading-row">
+            <label for="answer-${idx}">Tempo de resposta (s):</label>
+            <input type="number" id="answer-${idx}" class="answer-time" data-idx="${idx}"
+                   min="0" max="300" step="1" placeholder="auto"
+                   value="${q.answer_time == null ? '' : q.answer_time}">
+            <small class="reading-hint">vazio = automático pelo tamanho das alternativas (≈10 caracteres/s, máx. 120 s)</small>
+        </div>
+
         <label>Opções (selecione a correta):</label>
         <ul class="options-list" id="options-list-${idx}"></ul>
         
         <label>Figura (opcional):</label>
-        <div>
+        <div class="figure-row">
             <input type="file" class="figure-upload" accept="image/*" data-qidx="${idx}">
-            <button class="clear-figure-btn" data-qidx="${idx}" style="background:#6c757d;color:white;">Remover figura</button>
+            <button class="clear-figure-btn btn btn-sm btn-secondary" data-qidx="${idx}">Remover figura</button>
         </div>
         <div class="figure-preview-container" id="fig-preview-${idx}"></div>`;
         questionsContainer.appendChild(qDiv);
@@ -115,7 +131,7 @@ function renderQuestions() {
             li.innerHTML = `
                 <input type="radio" name="correct_option_${idx}" value="${optIdx}" ${q.correct_option === optIdx ? 'checked' : ''}>
                 <textarea class="option-text" style="flex:1; resize:vertical;" rows="1">${escapeHtml(opt)}</textarea>
-                <button class="remove-option-btn" data-optidx="${optIdx}" style="background:#dc3545;color:white;">X</button>
+                <button class="remove-option-btn btn btn-sm btn-danger btn-x" data-optidx="${optIdx}" title="Remover opção">✕</button>
             `;
             optionsList.appendChild(li);
 
@@ -129,9 +145,8 @@ function renderQuestions() {
         // Add new option button
         const addOptBtn = document.createElement('button');
         addOptBtn.textContent = '+ Adicionar opção';
-        addOptBtn.className = 'add-option-btn';
+        addOptBtn.className = 'add-option-btn btn btn-sm btn-primary';
         addOptBtn.dataset.qidx = idx;
-        addOptBtn.style.marginTop = '5px';
         optionsList.parentElement.appendChild(addOptBtn);
 
         // Preview existing figure
@@ -158,6 +173,47 @@ function bindQuestionEvents(qDiv, qIdx) {
         quizData.questions.splice(qIdx, 1);
         renderQuestions();
     });
+
+    // Tempo de leitura da pergunta (vazio = automático)
+    const readingInput = qDiv.querySelector('.reading-time');
+    if (readingInput) {
+        readingInput.addEventListener('input', (e) => {
+            const raw = e.target.value.trim();
+            if (raw === '') {
+                delete quizData.questions[qIdx].reading_time;
+                return;
+            }
+            const value = parseInt(raw, 10);
+            if (Number.isFinite(value)) {
+                quizData.questions[qIdx].reading_time = Math.min(300, Math.max(0, value));
+            }
+        });
+        // Reflete no campo o valor que será realmente salvo (0..300)
+        readingInput.addEventListener('blur', () => {
+            const saved = quizData.questions[qIdx].reading_time;
+            if (saved != null) readingInput.value = saved;
+        });
+    }
+
+    // Tempo de resposta da pergunta (vazio = automático pelas alternativas)
+    const answerInput = qDiv.querySelector('.answer-time');
+    if (answerInput) {
+        answerInput.addEventListener('input', (e) => {
+            const raw = e.target.value.trim();
+            if (raw === '') {
+                delete quizData.questions[qIdx].answer_time;
+                return;
+            }
+            const value = parseInt(raw, 10);
+            if (Number.isFinite(value)) {
+                quizData.questions[qIdx].answer_time = Math.min(300, Math.max(0, value));
+            }
+        });
+        answerInput.addEventListener('blur', () => {
+            const saved = quizData.questions[qIdx].answer_time;
+            if (saved != null) answerInput.value = saved;
+        });
+    }
 
     // Update question text on change
     const textInput = qDiv.querySelector('.question-text');
@@ -304,8 +360,7 @@ function addQuestion() {
         options: ["Opção 1", "Opção 2"],
         correct_option: 0,
         figure: "none"
-    });
-    renderQuestions();
+    });    renderQuestions();
 }
 
 // -------------------- Event listeners --------------------
@@ -463,6 +518,14 @@ function renderPreview() {
     previewCounter.textContent = previewSingle
         ? `Pré-visualização – Pergunta ${previewIndex + 1} de ${total}`
         : `Quiz completo – Pergunta ${previewIndex + 1} de ${total}`;
+
+    // Tempo de leitura explícito (quando vazio, o cálculo é automático no servidor)
+    if (q.reading_time != null && q.reading_time !== '') {
+        previewCounter.textContent += ` · leitura ${q.reading_time}s`;
+    }
+    if (q.answer_time != null && q.answer_time !== '') {
+        previewCounter.textContent += ` · resposta ${q.answer_time}s`;
+    }
 
     previewQuestionText.textContent = q.text || '(sem texto)';
 

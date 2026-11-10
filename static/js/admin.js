@@ -78,11 +78,11 @@ socket.on('update_user_list', (payload) => {
 
         const saveBtn = document.createElement('button');
         saveBtn.textContent = 'Salvar';
-        saveBtn.classList.add('btn-save');
+        saveBtn.className = 'btn btn-sm btn-save';
 
         const cancelBtn = document.createElement('button');
         cancelBtn.textContent = 'Cancelar';
-        cancelBtn.classList.add('btn-cancel');
+        cancelBtn.className = 'btn btn-sm btn-cancel';
 
         editForm.appendChild(editInput);
 
@@ -92,11 +92,11 @@ socket.on('update_user_list', (payload) => {
 
         const editBtn = document.createElement('button');
         editBtn.textContent = 'Editar';
-        editBtn.classList.add('btn-edit');
+        editBtn.className = 'btn btn-sm btn-edit';
 
         const removeBtn = document.createElement('button');
         removeBtn.textContent = 'Remover';
-        removeBtn.classList.add('btn-remove');
+        removeBtn.className = 'btn btn-sm btn-remove';
 
         actionsDiv.appendChild(editBtn);
         actionsDiv.appendChild(removeBtn);
@@ -123,8 +123,8 @@ socket.on('update_user_list', (payload) => {
 
             // Mostra o formulário de edição e os botões "Salvar/Cancelar"
             editForm.style.display = 'block';
-            saveBtn.style.display = 'inline-block';
-            cancelBtn.style.display = 'inline-block';
+            saveBtn.style.display = '';
+            cancelBtn.style.display = '';
             editInput.focus();
             editInput.select();
         });
@@ -133,8 +133,8 @@ socket.on('update_user_list', (payload) => {
         cancelBtn.addEventListener('click', () => {
             // Mostra o nome e os botões "Editar/Remover"
             spanName.style.display = 'block';
-            editBtn.style.display = 'inline-block';
-            removeBtn.style.display = 'inline-block';
+            editBtn.style.display = '';
+            removeBtn.style.display = '';
 
             // Esconde o formulário de edição e os botões "Salvar/Cancelar"
             editForm.style.display = 'none';

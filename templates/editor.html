@@ -3,21 +3,118 @@
 
 {% block content %}
 <style>
+    .container {
+        max-width: 1020px;
+    }
     .quiz-editor {
         max-width: 900px;
         margin: 0 auto;
-        padding: 20px;
+        padding: 0;
     }
     .quiz-selector {
-        margin-bottom: 20px;
+        margin-bottom: 16px;
         display: flex;
+        flex-wrap: wrap;
         gap: 10px;
         align-items: center;
     }
     .quiz-selector select {
-        flex: 1;
-        padding: 8px;
-        font-size: 16px;
+        flex: 1 1 220px;
+        min-width: 180px;
+    }
+    .editor-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 20px;
+    }
+
+    /* Barra de ferramentas do editor: mesma altura e mesma linguagem visual */
+    .quiz-selector .btn,
+    .editor-actions .btn {
+        padding-left: 16px;
+        padding-right: 16px;
+        font-size: 0.85rem;
+    }
+
+    .figure-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        margin-top: 6px;
+    }
+    .figure-row input[type="file"] {
+        font-family: inherit;
+        font-size: 0.85rem;
+        color: #555;
+    }
+    /* Tempo de leitura da pergunta (fase entre o enunciado e as alternativas) */
+    .reading-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        margin: 16px 0 4px;
+    }
+    .reading-row label {
+        margin: 0;
+        font-weight: 700;
+        color: #555;
+    }
+    .reading-time,
+    .answer-time {
+        width: 92px;
+        height: 36px;
+        padding: 0 10px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        text-align: center;
+        border: 2px solid #ddd;
+        border-radius: 6px;
+    }
+    .reading-time:focus,
+    .answer-time:focus {
+        border-color: #007bff;
+        box-shadow: 0 0 8px rgba(0, 123, 255, 0.2);
+        outline: none;
+    }
+    .reading-hint {
+        flex: 1 1 220px;
+        color: #888;
+        font-size: 0.72rem;
+        text-align: left;
+    }
+    .add-option-btn {
+        margin-top: 10px;
+    }
+    .btn-x {
+        min-width: 34px;
+        padding: 6px 0;
+    }
+    #quiz-form > label,
+    .question-card > label {
+        display: block;
+        margin: 14px 0 6px;
+        text-align: left;
+        font-weight: 700;
+        color: #555;
+    }
+    input.quiz-title-input {
+        width: 100%;
+        max-width: none;
+        height: 46px;
+        margin-bottom: 20px;
+        padding: 0 14px;
+        font-size: 1rem;
+        text-align: left;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+    }
+    input.quiz-title-input:focus {
+        border-color: #007bff;
+        box-shadow: 0 0 10px rgba(0, 123, 255, 0.2);
+        outline: none;
     }
     .question-card {
         border: 1px solid #ddd;
@@ -25,6 +122,7 @@
         padding: 15px;
         margin-bottom: 20px;
         background: #f9f9f9;
+        text-align: left;
     }
     .question-header {
         display: flex;
@@ -34,11 +132,27 @@
     }
     .question-header-actions {
         display: flex;
-        gap: 5px;
+        gap: 8px;
+        flex-shrink: 0;
     }
     .options-list {
         list-style: none;
         padding-left: 0;
+    }
+    .question-card textarea.question-text {
+        width: 100%;
+        padding: 10px 12px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        line-height: 1.45;
+        border: 2px solid #ddd;
+        border-radius: 6px;
+        resize: vertical;
+    }
+    .question-card textarea.question-text:focus {
+        border-color: #007bff;
+        box-shadow: 0 0 8px rgba(0, 123, 255, 0.2);
+        outline: none;
     }
     .options-list li {
         margin-bottom: 10px;
@@ -46,9 +160,28 @@
         gap: 10px;
         align-items: center;
     }
-    .options-list input {
+    .options-list input[type="radio"] {
+        flex: 0 0 auto;
+        width: 18px;
+        height: 18px;
+        margin: 0 2px 0 0;
+        accent-color: #007bff;
+        cursor: pointer;
+    }
+    .options-list textarea.option-text {
         flex: 1;
-        padding: 5px;
+        min-height: 38px;
+        padding: 8px 10px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        border: 2px solid #ddd;
+        border-radius: 6px;
+        resize: vertical;
+    }
+    .options-list textarea.option-text:focus {
+        border-color: #007bff;
+        box-shadow: 0 0 8px rgba(0, 123, 255, 0.2);
+        outline: none;
     }
     .correct-option {
         width: 60px;
@@ -58,26 +191,6 @@
         max-width: 150px;
         max-height: 150px;
         margin-top: 10px;
-    }
-    button {
-        padding: 5px 12px;
-        margin-right: 5px;
-        cursor: pointer;
-    }
-    .btn-primary {
-        background: #007bff;
-        color: white;
-        border: none;
-        padding: 8px 16px;
-    }
-    .btn-danger {
-        background: #dc3545;
-        color: white;
-        border: none;
-    }
-    .btn-warning {
-        background: #ffc107;
-        border: none;
     }
     hr {
         margin: 30px 0;
@@ -121,11 +234,7 @@
         color: #555;
     }
     .preview-close {
-        background: none;
-        border: none;
-        font-size: 20px;
-        cursor: pointer;
-        margin: 0;
+        flex-shrink: 0;
     }
     .preview-question-text {
         white-space: pre-wrap;
@@ -156,9 +265,38 @@
         font-weight: bold;
         margin-right: 8px;
     }
+    .preview-nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 16px;
+    }
     .preview-nav button:disabled {
         opacity: 0.5;
         cursor: not-allowed;
+    }
+    .preview-field,
+    input.preview-field,
+    select.preview-field {
+        width: 100%;
+        max-width: none;
+        height: 44px;
+        margin: 6px 0 14px;
+        padding: 0 12px;
+        font-family: inherit;
+        font-size: 1rem;
+        text-align: left;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        background-color: #fff;
+    }
+    .preview-field:focus,
+    input.preview-field:focus,
+    select.preview-field:focus {
+        border-color: #007bff;
+        box-shadow: 0 0 10px rgba(0, 123, 255, 0.2);
+        outline: none;
     }
 </style>
 
@@ -167,33 +305,39 @@
 
     <div class="quiz-selector">
         <label for="class-select" style="white-space: nowrap;">Turma:</label>
-        <select id="class-select"></select>
-        <button id="new-class-btn" class="btn-warning">Nova turma</button>
-        <button id="rename-class-btn" class="btn-warning">Renomear</button>
-        <button id="delete-class-btn" class="btn-danger">Excluir turma</button>
+        <select id="class-select" class="select-field"></select>
+        <div class="btn-group">
+            <button id="new-class-btn" class="btn btn-warning">Nova turma</button>
+            <button id="rename-class-btn" class="btn btn-warning">Renomear</button>
+            <button id="delete-class-btn" class="btn btn-danger">Excluir turma</button>
+        </div>
     </div>
 
     <div class="quiz-selector">
         <label for="quiz-select" style="white-space: nowrap;">Quiz:</label>
-        <select id="quiz-select">
+        <select id="quiz-select" class="select-field">
             <option value="">-- Novo Quiz --</option>
         </select>
-        <button id="new-quiz-btn" class="btn-warning">Novo</button>
-        <button id="delete-quiz-btn" class="btn-danger">Excluir</button>
-        <button id="copy-quiz-btn" style="background:#17a2b8; color:white; border:none;">📥 Copiar de outra turma</button>
+        <div class="btn-group">
+            <button id="new-quiz-btn" class="btn btn-warning">Novo</button>
+            <button id="delete-quiz-btn" class="btn btn-danger">Excluir</button>
+            <button id="copy-quiz-btn" class="btn btn-info">📥 Copiar de outra turma</button>
+        </div>
     </div>
 
     <div id="quiz-form">
-        <label>Título do Quiz:</label>
-        <input type="text" id="quiz-title" style="width: 100%; margin-bottom: 20px; padding: 8px;">
+        <label for="quiz-title">Título do Quiz:</label>
+        <input type="text" id="quiz-title" class="quiz-title-input" placeholder="Ex.: Funções do 1º grau">
 
         <div id="questions-container"></div>
 
-        <button id="add-question-btn" class="btn-primary">+ Adicionar Pergunta</button>
-        <button id="save-quiz-btn" style="background: #28a745; color: white; border: none; padding: 10px 20px; margin-left: 10px;">Salvar Quiz</button>
-        <button id="export-quiz-btn" style="background: #17a2b8; color: white; border: none; padding: 10px 20px; margin-left: 10px;">📤 Exportar Quiz</button>
-        <button id="import-quiz-btn" style="background: #6c757d; color: white; border: none; padding: 10px 20px; margin-left: 10px;">📂 Importar Quiz</button>
-        <button id="preview-quiz-btn" style="background: #6f42c1; color: white; border: none; padding: 10px 20px; margin-left: 10px;">👁 Pré-visualizar</button>
+        <div class="editor-actions">
+            <button id="add-question-btn" class="btn btn-primary" title="Adicionar uma nova pergunta">+ Nova Pergunta</button>
+            <button id="save-quiz-btn" class="btn btn-success">Salvar Quiz</button>
+            <button id="export-quiz-btn" class="btn btn-info">📤 Exportar Quiz</button>
+            <button id="import-quiz-btn" class="btn btn-secondary">📂 Importar Quiz</button>
+            <button id="preview-quiz-btn" class="btn btn-purple" title="Pré-visualizar o quiz">👁 Prévia</button>
+        </div>
         <input type="file" id="import-file-input" accept=".quiz" style="display: none;">
     </div>
 </div>
@@ -203,14 +347,14 @@
     <div class="preview-dialog">
         <div class="preview-header">
             <span id="preview-counter" class="preview-counter"></span>
-            <button id="preview-close-btn" class="preview-close" title="Fechar">✕</button>
+            <button id="preview-close-btn" class="btn btn-icon preview-close" title="Fechar">✕</button>
         </div>
         <h3 id="preview-question-text" class="preview-question-text"></h3>
         <img id="preview-figure" class="preview-figure" src="" alt="Figura da questão">
         <div id="preview-options" class="preview-options"></div>
         <div class="preview-nav">
-            <button id="preview-prev-btn">← Anterior</button>
-            <button id="preview-next-btn">Próxima →</button>
+            <button id="preview-prev-btn" class="btn btn-secondary">← Anterior</button>
+            <button id="preview-next-btn" class="btn btn-primary">Próxima →</button>
         </div>
     </div>
 </div>
@@ -220,20 +364,20 @@
     <div class="preview-dialog">
         <div class="preview-header">
             <span class="preview-counter">Copiar quiz de outra turma</span>
-            <button id="copy-close-btn" class="preview-close" title="Fechar">✕</button>
+            <button id="copy-close-btn" class="btn btn-icon preview-close" title="Fechar">✕</button>
         </div>
         <div style="text-align: left;">
             <label for="copy-src-class">Turma de origem:</label>
-            <select id="copy-src-class" style="width: 100%; padding: 8px; margin: 6px 0 14px;"></select>
+            <select id="copy-src-class" class="preview-field"></select>
 
             <label for="copy-src-quiz">Quiz:</label>
-            <select id="copy-src-quiz" style="width: 100%; padding: 8px; margin: 6px 0 14px;"></select>
+            <select id="copy-src-quiz" class="preview-field"></select>
 
             <label for="copy-new-name">Salvar na turma atual como:</label>
-            <input id="copy-new-name" type="text" style="width: 100%; padding: 8px; margin: 6px 0 14px;">
+            <input id="copy-new-name" type="text" class="preview-field">
         </div>
         <div class="preview-nav">
-            <button id="copy-confirm-btn" style="background: #28a745; color: white; border: none;">Copiar para esta turma</button>
+            <button id="copy-confirm-btn" class="btn btn-success">Copiar para esta turma</button>
         </div>
     </div>
 </div>
@@ -243,13 +387,12 @@
     <div class="preview-dialog" style="max-width: 460px;">
         <div class="preview-header">
             <span id="class-modal-title" class="preview-counter">Turma</span>
-            <button id="class-close-btn" class="preview-close" title="Fechar">✕</button>
+            <button id="class-close-btn" class="btn btn-icon preview-close" title="Fechar">✕</button>
         </div>
-        <input id="class-name-input" type="text" placeholder="Nome da turma"
-               style="width: 100%; padding: 10px; font-size: 16px; margin-bottom: 16px;">
+        <input id="class-name-input" type="text" placeholder="Nome da turma" class="preview-field">
         <div class="preview-nav">
-            <button id="class-cancel-btn">Cancelar</button>
-            <button id="class-save-btn" style="background: #28a745; color: white; border: none;">Salvar</button>
+            <button id="class-cancel-btn" class="btn btn-secondary">Cancelar</button>
+            <button id="class-save-btn" class="btn btn-success">Salvar</button>
         </div>
     </div>
 </div>
