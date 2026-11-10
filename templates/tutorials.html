@@ -159,14 +159,20 @@
 
         <div class="tip">
             <strong>Escolheu errado?</strong> Use o link <strong>↩ trocar turma/quiz</strong>.
-            Ele só funciona enquanto ninguém entrou na sala.
+            A sala fecha na hora e os alunos precisam digitar o nome de novo quando
+            ela reabrir.
         </div>
 
         <h4>Durante a partida</h4>
         <ul>
             <li>A pergunta aparece com a figura (se houver) e a contagem de respostas recebidas.</li>
-            <li>Os primeiros <strong>10 segundos</strong> são de leitura: as respostas ficam bloqueadas.</li>
-            <li>Depois disso os alunos têm <strong>30 segundos</strong> para responder.</li>
+            <li>Antes das alternativas há o <strong>tempo de leitura</strong>: as respostas ficam
+                bloqueadas e um contador 📖 aparece no canto. Por padrão esse tempo é calculado
+                pelo tamanho do enunciado (≈ 15 caracteres por segundo, entre 5 e 60 s) e pode ser
+                fixado pergunta a pergunta no <strong>Editor</strong>.</li>
+            <li>Depois começa o <strong>tempo de resposta</strong> (contador ⏱️): por padrão é
+                proporcional ao tamanho das alternativas (≈ 10 caracteres por segundo, até 120 s)
+                e também pode ser fixado por pergunta no <strong>Editor</strong>.</li>
             <li><strong>Mostrar Resultados</strong> revela a alternativa correta, o gráfico de
                 distribuição das respostas e o pódio da pergunta.</li>
             <li><strong>📋 Mostrar Pergunta Novamente</strong> reabre a pergunta para reler com a turma.</li>
@@ -215,6 +221,13 @@
             <li>Preencha o <strong>título</strong>.</li>
             <li>Em cada pergunta: o texto, as alternativas e o botão de rádio que marca a
                 <strong>alternativa correta</strong>.</li>
+            <li><strong>Tempo de leitura (s)</strong> — quanto tempo as alternativas ficam
+                bloqueadas depois que a pergunta aparece. Deixe <em>vazio</em> para o cálculo
+                automático (≈ 15 caracteres por segundo, entre 5 e 60 s) ou use
+                <strong>0</strong> para liberar as respostas imediatamente.</li>
+            <li><strong>Tempo de resposta (s)</strong> — quanto tempo os alunos têm para
+                escolher. Deixe <em>vazio</em> para o cálculo automático pelo tamanho das
+                alternativas (≈ 10 caracteres por segundo, até 120 s).</li>
             <li><strong>+ Adicionar Pergunta</strong> e <strong>+ Adicionar opção</strong> criam mais
                 itens (as alternativas aparecem como A, B, C, D).</li>
             <li><strong>Figura (opcional)</strong> — escolha um PNG/JPG/GIF do computador.</li>
@@ -291,6 +304,9 @@
             <li>Aguarde o professor iniciar. A cada pergunta, toque na letra da alternativa
                 (A, B, C ou D).</li>
             <li>Se a página recarregar, você volta para a mesma sessão, com os pontos que já tinha.</li>
+            <li>Se você entrar com a partida já em andamento, aparece
+                <em>"A partida já começou! Você entra na próxima pergunta."</em> — não é erro:
+                você passa a responder a partir da pergunta seguinte.</li>
         </ol>
         <div class="tip">
             <strong>Nome recusado?</strong> Confira com o professor se você está cadastrado na turma

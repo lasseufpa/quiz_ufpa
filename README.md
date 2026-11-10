@@ -133,10 +133,97 @@ sala, e o aluno **não precisa escolher turma** — ele só digita o nome.
 5. Clique em **Próxima Pergunta** para seguir. No fim, o placar aparece para
    todos.
 
+Entre o enunciado e as alternativas existe o **tempo de leitura** (contador 📖
+no canto da tela): as alternativas ficam bloqueadas para a turma ler a pergunta.
+Esse tempo pode ser fixado pergunta a pergunta no *Editor*; sem valor definido,
+ele é calculado pelo tamanho do enunciado (≈ 15 caracteres por segundo, entre
+5 e 60 s). Depois da leitura começa a **fase de resposta** (contador ⏱️), também
+configurável por pergunta: sem valor definido, o tempo é proporcional ao tamanho
+das alternativas (≈ 10 caracteres por segundo, até 120 s).
+
+### Fluxo de estados da partida
+
+```mermaid
+stateDiagram-v2
+    direction TB
+
+    state "Lobby — state 0" as LOBBY
+    state "Pergunta / leitura — state 1" as READING
+    state "Pergunta / respostas liberadas — state 1" as ANSWERING
+    state "Resultados — state 2" as RESULTS
+    state "Fim do quiz — state 3" as GAMEOVER
+
+    [*] --> LOBBY
+
+    LOBBY --> READING: Iniciar Jogo
+    READING --> ANSWERING: fim do tempo de leitura 📖
+    ANSWERING --> RESULTS: Mostrar Resultados ou fim do contador ⏱️
+    RESULTS --> READING: Próxima Pergunta
+    RESULTS --> GAMEOVER: não há mais perguntas
+
+    LOBBY --> GAMEOVER: Finalizar Quiz
+    READING --> GAMEOVER: Finalizar Quiz
+    ANSWERING --> GAMEOVER: Finalizar Quiz
+    RESULTS --> GAMEOVER: Finalizar Quiz
+
+    GAMEOVER --> LOBBY: Jogar novamente
+    LOBBY --> [*]: Trocar turma ou quiz
+    GAMEOVER --> [*]: Trocar turma ou quiz
+```
+
+O estado fica gravado em `.private/game_save.json` a cada mudança: se o
+apresentador ou um aluno recarregar a página (F5), ou o servidor reiniciar,
+todos voltam **no mesmo estado** — inclusive no meio de uma pergunta ou no
+placar final. A partida só é zerada pelo botão **Jogar novamente** (volta ao
+lobby com os alunos) ou pelo **↩ trocar turma/quiz** (fecha a sala e apaga o
+estado salvo).
+
+| Estado | Quem vê o quê | Como sai |
+|--------|----------------|----------|
+| **Lobby** (0) | Alunos na tela de espera ou digitando o nome; host com o QR code | *Iniciar Jogo*, *Finalizar Quiz* ou fechar a sala |
+| **Pergunta / leitura** (1) | Pergunta na tela, alternativas bloqueadas (📖) | fim do tempo de leitura |
+| **Pergunta / respostas** (1) | Alternativas liberadas (⏱️) | *Mostrar Resultados* ou fim do contador |
+| **Resultados** (2) | Alternativa correta, gráfico e pódio da questão | *Próxima Pergunta* ou *Finalizar Quiz* |
+| **Fim do quiz** (3) | Placar final para todos | *Jogar novamente* ou fechar a sala |
+
+## Simular uma turma (teste)
+
+Para testar o sistema sem precisar de 30 celulares na sala, o script
+`tools/simulate_class.js` cria **alunos virtuais**: eles entram na sala, acertam
+com probabilidades diferentes, respondem em tempos variados, às vezes deixam o
+tempo acabar e às vezes caem e voltam no meio da partida (reconexão).
+
+```sh
+npm install          # uma vez (instala o socket.io-client)
+node tools/simulate_class.js --class simulacao-10 \
+  --students "Ana,Bruno,Carla,Diego,Elisa,Felipe,Gabriela,Hugo,Isabela"
+```
+
+Depois abra o `/host`, escolha a turma e o quiz, clique em **Aguardar jogadores**
+(os alunos virtuais entram sozinhos) e em **Iniciar Jogo**. Você pode entrar
+junto pelo celular com um nome cadastrado na turma.
+
+Para o script conduzir a partida inteira, sem navegador, informe a senha do
+professor (ele faz o papel de apresentador e mostra o resumo no terminal):
+
+```sh
+node tools/simulate_class.js --password SENHA --class simulacao-10 \
+  --quiz 1C-RelatingAnalogDiscreteFrequencies
+```
+
+Opções úteis: `--accuracy 0.6` (acerto médio), `--skip 0.1` (chance de não
+responder), `--disconnect 0.15` (chance de cair), `--seed 42` (sorteio
+repetível). Use `--help` para ver todas.
+
 Enquanto a sala não é aberta, a tela do aluno mostra *"Aguardando o professor
 abrir a sala..."* e o botão de entrar fica desabilitado. Se precisar trocar a
-turma ou o quiz antes de começar, use o link **↩ trocar turma/quiz** (só
-funciona enquanto ninguém entrou).
+turma ou o quiz, use o link **↩ trocar turma/quiz**: a sala fecha e os alunos
+precisam entrar de novo quando ela reabrir.
+
+Quem ainda está digitando o nome não é afetado pelo início da partida: a tela
+de entrada continua igual. Se o aluno entrar com o jogo já em andamento, ele vê
+*"A partida já começou! Você entra na próxima pergunta."* e passa a responder a
+partir da pergunta seguinte.
 
 ## Cadastrar alunos
 
@@ -162,6 +249,13 @@ interface — não é preciso mexer em arquivos.
 - **Novo** / **Excluir** — começar um quiz do zero ou apagar o selecionado.
 - **+ Adicionar Pergunta** — cada pergunta tem um texto (aceita várias linhas),
   as alternativas e o botão de rádio que marca a **alternativa correta**.
+- **Tempo de leitura (s)** — por pergunta: quanto tempo as alternativas ficam
+  bloqueadas depois que o enunciado aparece. Deixe **vazio** para o cálculo
+  automático (≈ 15 caracteres por segundo, entre 5 e 60 s), ou use **0** para
+  liberar as respostas imediatamente.
+- **Tempo de resposta (s)** — por pergunta: quanto tempo os alunos têm para
+  escolher. Deixe **vazio** para o cálculo automático pelo tamanho das
+  alternativas (≈ 10 caracteres por segundo, máximo 120 s), ou fixe um valor.
 - **Figura (opcional)** — escolha uma imagem do computador; ela aparece na
   pergunta para os alunos.
 - **Salvar Quiz** — grave o quiz. Sem salvar, as mudanças são perdidas.
@@ -257,7 +351,8 @@ nunca se misturam.
   jogadores**) e se o nome dele está cadastrado na turma escolhida no
   apresentador (tela *Administração* + seletor de turma).
 - **Não consigo voltar para trocar turma/quiz.** O link **↩ trocar turma/quiz**
-  só funciona enquanto ninguém entrou na sala.
+  funciona a qualquer momento, mas fecha a sala: todos os alunos saem e precisam
+  entrar de novo depois que você reabrir.
 - **Não consigo excluir uma turma.** A última turma não pode ser excluída — crie
   outra antes.
 - **Os alunos não abrem o endereço.** Todos precisam estar na mesma rede do seu
