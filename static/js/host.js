@@ -30,6 +30,12 @@ const prepareBtn = document.getElementById('prepare-btn');
 const joinQrEl = document.getElementById('join-qr');
 const joinUrlEl = document.getElementById('join-url');
 const joinClassNameEl = document.getElementById('join-class-name');
+const teamModeInput = document.getElementById('team-mode-input');
+const teamModeHintEl = document.getElementById('team-mode-hint');
+
+function teamModeEnabled() {
+    return !!(teamModeInput && teamModeInput.checked);
+}
 
 let reopenRoomOnLoad = false;
 
@@ -180,6 +186,14 @@ function showWaitingPhase() {
     joinClassNameEl.textContent = slug ? selectedClassName() : '(selecione a turma)';
     renderJoinQr(base);
 
+    if (teamModeHintEl) {
+        const ligado = teamModeEnabled();
+        teamModeHintEl.style.display = ligado ? 'inline-block' : 'none';
+        teamModeHintEl.textContent = ligado
+            ? 'Modo time ligado — cada aluno escolhe Time A ou Time B ao entrar.'
+            : '';
+    }
+
     lobbySetup.style.display = 'none';
     lobbyWaiting.style.display = 'block';
     updateStartBtn();
@@ -190,8 +204,11 @@ function openRoom() {
         alert('Escolha a turma e o quiz antes de abrir a sala.');
         return;
     }
-    // O servidor passa a aceitar os alunos dessa turma
-    socket.emit('open_room', { 'class': classSelect.value });
+    // O servidor passa a aceitar os alunos dessa turma (e o modo de jogo)
+    socket.emit('open_room', {
+        'class': classSelect.value,
+        'team_mode': teamModeEnabled()
+    });
     showWaitingPhase();
 }
 
@@ -247,10 +264,23 @@ if (changeSelectionMenu) {
 // Atualiza a lista de jogadores no lobby
 socket.on('update_player_list', (players) => {
     //lobbyView.style.display='block'
+    players = players || [];
     playerListEl.innerHTML = '';
-    players.forEach(name => {
+    players.forEach((entry) => {
+        // O servidor pode mandar só o nome (versões antigas) ou um objeto
+        const nome = (typeof entry === 'string') ? entry : (entry.nickname || '');
+        const timeNome = (typeof entry === 'object' && entry) ? entry.team_name : null;
+
         const li = document.createElement('li');
-        li.textContent = name;
+        li.textContent = nome;
+
+        if (timeNome) {
+            const badge = document.createElement('span');
+            badge.className = 'team-badge ' + (entry.team === 'B' ? 'team-b' : 'team-a');
+            badge.textContent = timeNome;
+            li.appendChild(badge);
+        }
+
         playerListEl.appendChild(li);
     });
     updateStartBtn(players.length);
@@ -562,9 +592,60 @@ document.getElementById('next-question-btn').addEventListener('click', () => {
 });
 
 // Fim de jogo
-function renderFinalLeaderboard(leaderboard) {
+// Aceita tanto a lista antiga (array de jogadores) quanto o objeto novo
+// {leaderboard, teams, team_mode}.
+function normalizeFinalPayload(payload) {
+    if (Array.isArray(payload)) {
+        return { leaderboard: payload, teams: [], team_mode: false };
+    }
+    payload = payload || {};
+    return {
+        leaderboard: payload.leaderboard || [],
+        teams: payload.teams || [],
+        team_mode: !!payload.team_mode
+    };
+}
+
+function renderTeamStandings(teams) {
+    teams.forEach((team) => {
+        const header = document.createElement('li');
+        header.className = 'team-header' + (team.winning ? ' winning' : '');
+        const posicao = team.tied ? 'empate' : `${team.position}º`;
+        header.textContent = `${team.winning ? '🏆 ' : ''}${team.name} — ${team.score} pontos (${posicao})`;
+        finalScoreListEl.appendChild(header);
+
+        const melhores = team.top || [];
+        if (melhores.length === 0) {
+            const li = document.createElement('li');
+            li.className = 'team-member';
+            li.textContent = 'sem jogadores';
+            finalScoreListEl.appendChild(li);
+            return;
+        }
+
+        melhores.forEach((member, index) => {
+            const li = document.createElement('li');
+            li.className = 'team-member';
+            li.textContent = `${index + 1}. ${member.nickname}: ${member.score} pontos`;
+            finalScoreListEl.appendChild(li);
+        });
+    });
+}
+
+function renderFinalLeaderboard(payload) {
+    const data = normalizeFinalPayload(payload);
     finalScoreListEl.innerHTML = '';
 
+    const emTimes = data.team_mode && data.teams.length > 0;
+    // Desliga as cores de pódio quando o placar é por time
+    finalScoreListEl.classList.toggle('team-mode', emTimes);
+
+    if (emTimes) {
+        renderTeamStandings(data.teams);
+        return;
+    }
+
+    const leaderboard = data.leaderboard;
     if (!leaderboard || leaderboard.length === 0) {
         const li = document.createElement('li');
         li.textContent = 'Nenhum jogador participou.';
@@ -607,14 +688,14 @@ function renderFinalLeaderboard(leaderboard) {
     });
 }
 
-socket.on('game_over', (leaderboard) => { // Recebe o placar ordenado (decrescente)
+socket.on('game_over', (payload) => { // Placar final (objeto com times, ou lista antiga)
     resultsView.style.display = 'none';
     gameOverView.style.display = 'block';
     lobbyView.style.display = 'none';
     forceEndBtn.style.display = 'none'; // Esconde o botão no lobby
     hideAnswerTimerNotification();
 
-    renderFinalLeaderboard(leaderboard);
+    renderFinalLeaderboard(payload);
 });
 
 // O professor clicou em "Jogar novamente": a partida recomeça com os mesmos
@@ -766,7 +847,11 @@ socket.on('resume_host_state', (data) => {
         case STATE_GAMEOVER:
             gameOverView.style.display = 'block';
             // Mantém o placar final na tela mesmo depois de recarregar (F5)
-            renderFinalLeaderboard(data.leaderboard || []);
+            renderFinalLeaderboard({
+                leaderboard: data.leaderboard || [],
+                teams: data.teams || [],
+                team_mode: !!data.team_mode
+            });
             break;
             
         default:

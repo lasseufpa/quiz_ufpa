@@ -99,6 +99,65 @@ def _build_leaderboard(game_state):
     return leaderboard
 
 
+# -------------------- Modo time --------------------
+def normalize_team(value):
+    """Converte o que veio do cliente ('A', 'Time A', 'TIME B'…) em 'A'/'B'."""
+    if value is None:
+        return None
+    text = str(value).strip().upper()
+    if not text:
+        return None
+    if text in constants.TEAM_KEYS:
+        return text
+    for key, name in constants.TEAM_NAMES.items():
+        if text == name.upper() or text.endswith(' ' + key):
+            return key
+    last = text[-1]
+    return last if last in constants.TEAM_KEYS else None
+
+
+def _team_members(game_state, key):
+    """Jogadores de um time, do maior para o menor placar de competição."""
+    teams = game_state.get('teams', {}) or {}
+    scores = game_state.get('competition_scores', {}) or {}
+    players = game_state.get('players', {}) or {}
+    members = [
+        {'nickname': nickname, 'score': scores.get(sid, 0)}
+        for sid, nickname in players.items() if teams.get(sid) == key
+    ]
+    members.sort(key=lambda member: member['score'], reverse=True)
+    return members
+
+
+def build_team_standings(game_state):
+    """Placar por time, do que está ganhando para o que está perdendo.
+
+    A pontuação de cada time é a soma dos pontos de competição dos seus
+    jogadores (os mesmos que formavam o pódio). Cada time leva até
+    `TEAM_TOP_N` jogadores em `top` para aparecer nos resultados.
+    """
+    standings = []
+    for key in constants.TEAM_KEYS:
+        members = _team_members(game_state, key)
+        standings.append({
+            'key': key,
+            'name': constants.TEAM_NAMES.get(key, key),
+            'score': sum(member['score'] for member in members),
+            'count': len(members),
+            'top': members[:constants.TEAM_TOP_N],
+        })
+
+    standings.sort(key=lambda team: team['score'], reverse=True)
+    best = standings[0]['score'] if standings else 0
+    tied = [team for team in standings if team['score'] == best]
+
+    for index, team in enumerate(standings):
+        team['position'] = index + 1
+        team['tied'] = len(tied) > 1
+        team['winning'] = team['score'] == best
+    return standings
+
+
 def finish_game(game_state, quiz_data):
     """Encerra o quiz: exporta o CSV, anuncia o placar e MANTÉM o estado final.
 
@@ -117,14 +176,22 @@ def finish_game(game_state, quiz_data):
         classes.name_of(game_state.get('class_slug')) or None,
     )
 
+    team_mode = bool(game_state.get('team_mode'))
+    team_standings = build_team_standings(game_state) if team_mode else []
+
     game_state['state'] = constants.STATE_GAMEOVER
     game_state['final_leaderboard'] = leaderboard
+    game_state['final_teams'] = team_standings
     game_state['question_start_time'] = None
     game_state['answers'] = {}
     game_state['answers_time'] = {}
     game_handler.save_full_state(game_state, quiz_data)
 
-    emit('game_over', leaderboard, to=constants.GAME_ROOM)
+    emit('game_over', {
+        'leaderboard': leaderboard,
+        'teams': team_standings,
+        'team_mode': team_mode,
+    }, to=constants.GAME_ROOM)
 
 
 def reset_for_new_match(game_state, quiz_data):
@@ -140,6 +207,7 @@ def reset_for_new_match(game_state, quiz_data):
     game_state['competition_scores'] = {sid: 0 for sid in game_state['players']}
     game_state['state'] = constants.STATE_LOBBY
     game_state['final_leaderboard'] = []
+    game_state['final_teams'] = []
     game_state['question_start_time'] = None
     game_state['reading_duration'] = None
     game_state['reading_started_at'] = None
@@ -413,8 +481,12 @@ def show_results(game_state, quiz_data):
     # Top 3 desta questão (pódio do gráfico)
     top3 = sorted(question_competition_points.items(), key=lambda x: x[1], reverse=True)[:3]
 
+    team_mode = bool(game_state.get('team_mode'))
+    team_standings = build_team_standings(game_state) if team_mode else []
+
     combined_chart_path = chart.save_combined_results_chart(
-        answer_distribution, question_data, q_index, top3
+        answer_distribution, question_data, q_index, top3,
+        team_standings=team_standings,
     )
 
     payload = {
@@ -424,6 +496,8 @@ def show_results(game_state, quiz_data):
         'players': game_state['players'],
         'answer_distribution': answer_distribution,
         'chart_path': combined_chart_path,
+        'team_mode': team_mode,
+        'teams': team_standings,
     }
     emit('show_results', payload, to=constants.GAME_ROOM)
     log.info("Mostrando resultados com gráfico combinado.")

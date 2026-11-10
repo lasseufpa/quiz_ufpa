@@ -51,6 +51,9 @@ def restore_full_state():
     runtime.game_state.setdefault('question_token', 0)
     runtime.game_state.setdefault('class_slug', None)
     runtime.game_state.setdefault('quiz_name', None)
+    runtime.game_state.setdefault('team_mode', False)
+    runtime.game_state.setdefault('teams', {})
+    runtime.game_state.setdefault('final_teams', [])
     runtime.game_state['PLAYER_SESSIONS'] = saved.get('PLAYER_SESSIONS', {})
 
     # Depois de reiniciar o servidor nenhum socket antigo existe: o host precisa

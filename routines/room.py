@@ -15,6 +15,9 @@ def payload():
         'class': slug or None,
         'class_name': classes.name_of(slug) if slug else None,
         'state': game_state.get('state', constants.STATE_LOBBY),
+        # Modo time: a tela do aluno mostra o seletor de time ao entrar
+        'team_mode': bool(game_state.get('team_mode')),
+        'teams': constants.TEAM_NAMES,
     }
 
 

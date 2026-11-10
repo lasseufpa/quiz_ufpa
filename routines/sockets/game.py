@@ -46,15 +46,30 @@ def on_open_room(data):
     if request.sid != game_state['host_sid']:
         return
 
-    class_slug = (data or {}).get('class')
+    data = data or {}
+    class_slug = data.get('class')
     if not class_slug or not classes.exists(class_slug):
         emit('admin_error', {'message': 'Turma inválida para abrir a sala.'}, to=request.sid)
         return
 
     game_state['class_slug'] = class_slug
+    game_state['team_mode'] = bool(data.get('team_mode', game_state.get('team_mode', False)))
+
+    if game_state['team_mode']:
+        # Quem já estava na sala precisa de um time (reabertura da sala)
+        teams = game_state.setdefault('teams', {})
+        for index, sid in enumerate(game_state['players']):
+            if sid not in teams:
+                teams[sid] = constants.TEAM_KEYS[index % len(constants.TEAM_KEYS)]
+    else:
+        game_state['teams'] = {}
+
     persistence.save_full_state(game_state, runtime.quiz_data)
-    log.info(f"Sala aberta para a turma '{classes.name_of(class_slug)}'.")
+    log.info("Sala aberta para a turma '%s' (modo time: %s).",
+             classes.name_of(class_slug), 'ligado' if game_state['team_mode'] else 'desligado')
     emit('room_info', room.payload(), broadcast=True)
+    emit('update_player_list', game_handler.players_payload(game_state),
+         to=game_state['host_sid'])
 
 
 def on_close_room():
@@ -100,7 +115,6 @@ def on_close_room():
     emit('room_info', room.payload(), broadcast=True)
     emit('update_player_list', [], to=request.sid)
 
-
 def on_next_question():
     game_state = runtime.game_state
     if request.sid != game_state['host_sid']:
@@ -142,7 +156,7 @@ def on_play_again():
     }, broadcast=True)
 
     if game_state['host_sid']:
-        emit('update_player_list', list(game_state['players'].values()),
+        emit('update_player_list', game_handler.players_payload(game_state),
              to=game_state['host_sid'])
         emit('update_answer_count', {
             'answered': 0,

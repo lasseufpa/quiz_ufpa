@@ -29,3 +29,11 @@ GAME_SAVE_FILE = '.private/game_save.json'
 # Eventos de jogo vão só para essa sala: quem ainda está na tela de entrada,
 # digitando o nome, não recebe pergunta/resultados.
 GAME_ROOM = 'partida'
+
+# --- Modo time ---
+# Ligado no apresentador antes de iniciar o quiz: cada aluno escolhe um dos
+# times ao entrar e os resultados passam a mostrar o placar por time.
+TEAM_MODE_DEFAULT = False
+TEAM_KEYS = ('A', 'B')
+TEAM_NAMES = {'A': 'Time A', 'B': 'Time B'}
+TEAM_TOP_N = 2          # quantos jogadores de cada time aparecem nos resultados

@@ -115,6 +115,7 @@ if (args.help || args.h) {
     '  --skip        chance de não responder (padrão 0.04)',
     '  --disconnect  chance de cair após responder (padrão 0.06)',
     '  --wait        segundos de espera pelos alunos antes de iniciar (padrão 8)',
+    '  --teams       times do modo time; "alternar" (padrão, A/B) ou "A" / "B"',
     '  --seed        semente do sorteio (repetível)',
     '',
   ].join('\n'));
@@ -130,6 +131,7 @@ const cfg = {
   accuracy: args.accuracy != null ? Number(args.accuracy) : null,
   skip: args.skip != null ? Number(args.skip) : 0.04,
   disconnect: args.disconnect != null ? Number(args.disconnect) : 0.06,
+  teams: (args.teams || 'alternar'),
   seed: Number(args.seed || 20261104),
 };
 
@@ -144,9 +146,19 @@ const answerMap = {};   // texto da pergunta -> índice da alternativa correta
 let finished = false;
 
 // -------------------- perfis --------------------
-const profiles = botNames.map((nickname) => {
+// No modo time, os alunos virtuais se dividem: "alternar" (A, B, A, B…),
+// um time fixo ("A" ou "B") ou "nenhum" para salas sem modo time.
+function teamForIndex(index) {
+  const escolha = String(cfg.teams || 'alternar').toLowerCase();
+  if (escolha === 'nenhum' || escolha === 'none' || escolha === 'off') return null;
+  if (escolha === 'a' || escolha === 'b') return escolha.toUpperCase();
+  return index % 2 === 0 ? 'A' : 'B';
+}
+
+const profiles = botNames.map((nickname, index) => {
   const profile = {
     nickname: nickname,
+    team: teamForIndex(index),        // 'A'/'B' (modo time) ou null
     accuracy: cfg.accuracy != null ? cfg.accuracy : 0.30 + rnd() * 0.60,
     speed: 0.6 + rnd() * 1.6,          // > 1 = mais lento
     pSkip: cfg.skip,
@@ -168,6 +180,7 @@ function describeProfiles() {
     console.log('  ' + pad(p.nickname, 12) +
       'acerto ' + pad(Math.round(p.accuracy * 100) + '%', 5) +
       ' velocidade x' + p.speed.toFixed(2) +
+      (p.team ? '  time ' + p.team : '') +
       '  (pular ' + Math.round(p.pSkip * 100) + '%, cair ' + Math.round(p.pDisconnect * 100) + '%)');
   });
   console.log('');
@@ -233,12 +246,13 @@ function createBot(profile) {
       sockets.push(sock);
 
       sock.on('connect', () => {
-        sock.emit('player_join', { nickname: profile.nickname });
+        sock.emit('player_join', { nickname: profile.nickname, team: profile.team });
       });
 
-      sock.on('join_success', () => {
+      sock.on('join_success', (data) => {
         warnedClosed = false;
-        console.log('  \u2713 ' + profile.nickname + ' entrou na sala');
+        const time = data && data.team_name ? ' [' + data.team_name + ']' : '';
+        console.log('  \u2713 ' + profile.nickname + ' entrou na sala' + time);
       });
 
       sock.on('join_failed', (d) => {
@@ -250,7 +264,7 @@ function createBot(profile) {
             'aguardando a sala abrir (' + (d && d.reason ? d.reason : 'sem motivo') + ')');
         }
         setTimeout(() => {
-          if (sock && sock.connected) sock.emit('player_join', { nickname: profile.nickname });
+          if (sock && sock.connected) sock.emit('player_join', { nickname: profile.nickname, team: profile.team });
         }, 2500);
       });
 
@@ -295,7 +309,7 @@ function createBot(profile) {
         state.questionIndex = -1;
         console.log('  \u{1F6AA} ' + pad(profile.nickname, 10) + 'sala fechada \u2014 aguardando reabrir');
         setTimeout(() => {
-          if (sock && sock.connected) sock.emit('player_join', { nickname: profile.nickname });
+          if (sock && sock.connected) sock.emit('player_join', { nickname: profile.nickname, team: profile.team });
         }, 1500);
       });
 

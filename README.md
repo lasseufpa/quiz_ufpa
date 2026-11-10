@@ -123,7 +123,8 @@ sala, e o aluno **não precisa escolher turma** — ele só digita o nome.
    *Administração* e prepare o quiz.
 2. Abra a tela do **Apresentador**, escolha a **turma** e o **quiz** e clique em
    **Aguardar jogadores**. Os seletores somem e aparece o **QR code** com o
-   endereço da sala.
+   endereço da sala. (Para uma disputa entre times, marque antes
+   **Modo time (Time A × Time B)** — veja abaixo.)
 3. Os alunos apontam a câmera do celular para o QR code (ou digitam o endereço),
    veem a turma na tela e digitam o nome cadastrado. Cada um que entra aparece
    na lista do apresentador.
@@ -185,6 +186,23 @@ estado salvo).
 | **Pergunta / respostas** (1) | Alternativas liberadas (⏱️) | *Mostrar Resultados* ou fim do contador |
 | **Resultados** (2) | Alternativa correta, gráfico e pódio da questão | *Próxima Pergunta* ou *Finalizar Quiz* |
 | **Fim do quiz** (3) | Placar final para todos | *Jogar novamente* ou fechar a sala |
+
+### Modo time (Time A × Time B)
+
+Antes de clicar em **Aguardar jogadores**, marque **Modo time (Time A × Time B)**
+na tela do apresentador. Com ele ligado:
+
+- o aluno **escolhe o time** na tela de entrada (*Time A* ou *Time B*); sem
+  escolher, a entrada é recusada com a mensagem "Escolha o seu time";
+- o apresentador vê o time de cada aluno ao lado do nome, na lista da sala;
+- a tela de resultados troca o **pódio do top 3 global** pelo **placar por
+  time**: quem está na frente (ou *empate na liderança*) e os **dois melhores
+  jogadores de cada time**;
+- o placar final também lista os times na ordem e o top 2 de cada um.
+
+O time soma os **pontos de competição** dos seus jogadores (os mesmos do pódio,
+que bonificam quem responde mais rápido). Ao desmarcar a opção, a partida volta
+ao formato individual com o top 3 global.
 
 ## Simular uma turma (teste)
 

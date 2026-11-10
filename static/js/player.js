@@ -13,6 +13,7 @@ const questionTextEl = document.getElementById('question-text');
 const resultTextEl = document.getElementById('result-text');
 const scoreDisplayEl = document.getElementById('score-display');
 const waitMessageEl = document.getElementById('wait-message');
+const teamLineEl = document.getElementById('team-line');
 
 const STATE_LOBBY = 0
 const STATE_QUESTION = 1
@@ -25,6 +26,7 @@ let lastAnsweredQuestionIndex = null; // stores the index of the question answer
 
 let mySid = null;
 let myTeam = null;
+let teamMode = false;   // o professor ligou o modo time?
 let sessionToken = localStorage.getItem('quizSessionToken');
 // Só recebe/mostra eventos de jogo depois que o servidor confirma a entrada.
 // Sem isso, quem ainda está digitando o nome via as alternativas aparecerem
@@ -163,8 +165,19 @@ const joinBtn = document.getElementById('join-btn'); // Pega o botão
 
 joinBtn.addEventListener('click', () => {
     const nickname = nicknameInput.value.trim(); // Usa .trim()
-    const team = 'time A';
-    if (nickname && team) {
+
+    // No modo time, o aluno precisa escolher onde vai competir
+    let team = null;
+    if (teamMode) {
+        team = teamSelect ? teamSelect.value : '';
+        if (!team) {
+            alert('Escolha o seu time (Time A ou Time B) para entrar!');
+            if (teamSelect) teamSelect.focus();
+            return;
+        }
+    }
+
+    if (nickname) {
         joinBtn.disabled = true; // Desabilita o botão
         socket.emit('player_join', { 'nickname': nickname, 'team': team });
         console.log("Jogador " + nickname + " pediu para entrar");
@@ -181,8 +194,35 @@ const roomInfoEl = document.getElementById('room-info');
 const roomClassNameEl = document.getElementById('room-class-name');
 const roomClosedEl = document.getElementById('room-closed');
 
+// Preenche o seletor de times com os nomes que o servidor informou
+function renderTeamOptions(teams) {
+    if (!teamSelect) return;
+    const selecionado = teamSelect.value;
+    const mapa = teams || { A: 'Time A', B: 'Time B' };
+
+    teamSelect.innerHTML = '<option value="">Selecione seu time</option>';
+    Object.keys(mapa).forEach((key) => {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = mapa[key];
+        teamSelect.appendChild(opt);
+    });
+
+    if (selecionado) teamSelect.value = selecionado;
+    teamSelect.style.display = teamMode ? 'block' : 'none';
+}
+
+function showMyTeam(teamName) {
+    if (!teamLineEl || !teamDisplay) return;
+    teamDisplay.textContent = teamName || '';
+    teamLineEl.style.display = teamName ? 'block' : 'none';
+}
+
 socket.on('room_info', (data) => {
     const aberta = !!(data && data.class_name);
+
+    teamMode = !!(data && data.team_mode);
+    renderTeamOptions(data && data.teams);
 
     roomClassNameEl.textContent = aberta ? data.class_name : '';
     roomInfoEl.style.display = aberta ? 'block' : 'none';
@@ -215,6 +255,8 @@ socket.on('room_closed', (data) => {
     scoreDisplayEl.textContent = '0';
     nicknameDisplay.textContent = '';
     nicknameInput.value = '';
+    showMyTeam(null);
+    if (teamSelect) teamSelect.style.display = teamMode ? 'block' : 'none';
 
     questionView.style.display = 'none';
     resultView.style.display = 'none';
@@ -236,6 +278,7 @@ socket.on('join_success', (data) => {
     joinView.style.display = 'none';
     waitView.style.display = 'block';
     nicknameDisplay.textContent = data.nickname;
+    showMyTeam(data.team_name);
 
     // O aluno pode ter entrado com o jogo já em andamento: avisa em vez de
     // jogar as alternativas na tela dele.
@@ -262,6 +305,7 @@ joined = true;
 joinView.style.display = 'none';
 waitView.style.display = 'block';
 nicknameDisplay.textContent = data.nickname;
+showMyTeam(data.team_name);
 allow_answer = data.allow_answer;
 
 
@@ -360,13 +404,16 @@ socket.on('show_results', (data) => {
     // --- FIM DA LÓGICA CORRIGIDA ---
 });
 
-socket.on('game_over', (scores) => {
+socket.on('game_over', (payload) => {
     if (!joined) return;
+    // O servidor manda {leaderboard, teams, team_mode} (ou uma lista, em
+    // versões antigas): para o aluno basta o placar geral.
+    const lista = Array.isArray(payload) ? payload : ((payload && payload.leaderboard) || []);
     questionView.style.display = 'none';
     resultView.style.display = 'block';
     resultTextEl.textContent = 'O JOGO TERMINOU! Obrigado por jogar.';
     // Encontrar o score correto para este jogador
-    const playerEntry = scores.find(player => player.nickname === nicknameDisplay.textContent);
+    const playerEntry = lista.find(player => player.nickname === nicknameDisplay.textContent);
     if (playerEntry) {
         scoreDisplayEl.textContent = playerEntry.score;
     }

@@ -31,7 +31,7 @@ def connect_host(game_state, QUIZ_DATA):
 
     # --- Act like a page refresh: send current state to the new host ---
     # 1. Send current player list (may be empty)
-    emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
+    emit('update_player_list', game_handler.players_payload(game_state), to=game_state['host_sid'])
 
 
     elapsed_time = None
@@ -70,6 +70,8 @@ def connect_host(game_state, QUIZ_DATA):
             'answered_count': len(game_state['answers']),
             'remaining_time': _remaining(),
             'leaderboard': game_state.get('final_leaderboard', []),
+            'teams': game_state.get('final_teams', []),
+            'team_mode': bool(game_state.get('team_mode')),
             'quiz_name': game_state.get('quiz_name')
         }, to=game_state['host_sid'])
 
@@ -126,4 +128,4 @@ def connect_host(game_state, QUIZ_DATA):
     if old_host_sid != request.sid:
         emit('host_changed', {'message': 'Um novo anfitrião assumiu o controle do jogo.'}, broadcast=True)
 
-        emit('update_player_list', list(game_state['players'].values()), to=game_state['host_sid'])
+        emit('update_player_list', game_handler.players_payload(game_state), to=game_state['host_sid'])

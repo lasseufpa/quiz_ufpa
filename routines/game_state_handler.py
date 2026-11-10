@@ -31,6 +31,9 @@ def clear_game_state():
         'question_token': 0,    # invalida timers de perguntas antigas
         'class_slug': None,     # turma da partida atual
         'quiz_name': None,      # quiz escolhido (para repetir a partida)
+        'team_mode': constants.TEAM_MODE_DEFAULT,  # modo time ligado?
+        'teams': {},            # {sid: 'A'/'B'} — time de cada aluno
+        'final_teams': [],      # placar por time da última partida
         'PLAYER_SESSIONS': {}
     }
     return game_state
@@ -45,6 +48,21 @@ def online_count(game_state):
     """Quantos jogadores estão online agora."""
     connected = game_state.get('connected', {})
     return sum(1 for sid in game_state['players'] if connected.get(sid, True))
+
+
+def players_payload(game_state):
+    """Lista de jogadores para o apresentador: nome, time e se está online."""
+    teams = game_state.get('teams', {}) or {}
+    payload = []
+    for sid, nickname in game_state['players'].items():
+        team = teams.get(sid)
+        payload.append({
+            'nickname': nickname,
+            'team': team,
+            'team_name': constants.TEAM_NAMES.get(team),
+            'online': is_connected(game_state, sid),
+        })
+    return payload
 
 def save_full_state(game_state, QUIZ_DATA, force=True):
     """Grava o estado em disco de forma atômica.
@@ -77,6 +95,9 @@ def save_full_state(game_state, QUIZ_DATA, force=True):
             'question_token': game_state.get('question_token', 0),
             'class_slug': game_state.get('class_slug'),
             'quiz_name': game_state.get('quiz_name'),
+            'team_mode': game_state.get('team_mode', False),
+            'teams': game_state.get('teams', {}),
+            'final_teams': game_state.get('final_teams', []),
             'PLAYER_SESSIONS': game_state['PLAYER_SESSIONS']
         },
         'quiz_data': QUIZ_DATA  # current quiz being played

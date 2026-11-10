@@ -390,19 +390,20 @@
         }
 
         /* --- Pódio/Placar Final --- */
-        #final-score-list li:nth-child(1) {
+        /* (no modo time o placar é por equipe: as cores de pódio não valem) */
+        #final-score-list:not(.team-mode) li:nth-child(1) {
             background-color: #fff3cd !important;
             font-size: 1.2em;
             font-weight: 700;
             border: 2px solid #ffeeba;
         }
 
-        #final-score-list li:nth-child(2) {
+        #final-score-list:not(.team-mode) li:nth-child(2) {
             background-color: #e2e3e5 !important;
             border: 2px solid #d6d8db;
         }
 
-        #final-score-list li:nth-child(3) {
+        #final-score-list:not(.team-mode) li:nth-child(3) {
             background-color: #ffe8cc !important;
             border: 2px solid #ffddb1;
         }

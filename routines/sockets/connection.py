@@ -9,6 +9,7 @@ from flask import request
 from flask_socketio import emit, join_room
 
 from routines import classes, constants, json_store, persistence, room
+from routines import game_logic
 from routines import game_state_handler as game_handler
 from routines import runtime
 from routines import logger  # noqa: F401  (configura console + arquivo)
@@ -91,6 +92,10 @@ def on_restore_session(data):
             game_state.setdefault('connected', {}).pop(old_sid, None)
             game_state['connected'][new_sid] = True
 
+            # Leva o time junto (modo time)
+            if old_sid in game_state.get('teams', {}):
+                game_state['teams'][new_sid] = game_state['teams'].pop(old_sid)
+
             # Atualiza o token com o novo SID
             game_state['PLAYER_SESSIONS'][token]['sid'] = new_sid
 
@@ -106,6 +111,8 @@ def on_restore_session(data):
             # perguntas/resultados.
             join_room(constants.GAME_ROOM, sid=new_sid)
 
+            player_team = game_state.get('teams', {}).get(new_sid)
+
             emit('session_restored', {
                 'nickname': nickname,
                 'current_question': game_state['current_question'],
@@ -113,11 +120,13 @@ def on_restore_session(data):
                 'options': [0, 1, 2, 3],
                 'state': game_state['state'],
                 'allow_answer': allow_answer,
+                'team': player_team,
+                'team_name': constants.TEAM_NAMES.get(player_team),
             }, to=new_sid)
 
             # Atualiza o host (lista e contagem)
             if game_state['host_sid']:
-                emit('update_player_list', list(game_state['players'].values()),
+                emit('update_player_list', game_handler.players_payload(game_state),
                      to=game_state['host_sid'])
                 emit('update_answer_count', {
                     'answered': len(game_state['answers']),
@@ -159,6 +168,17 @@ def on_player_join(data):
         log.warning(f"Falha no login: '{nickname}' não está na turma {class_slug}.")
         return
 
+    # --- Modo time: o aluno precisa dizer em qual time vai competir ---
+    team = None
+    if game_state.get('team_mode'):
+        team = game_logic.normalize_team(data.get('team'))
+        if team is None:
+            emit('join_failed', {
+                'reason': 'Escolha o seu time (Time A ou Time B) antes de entrar.'
+            }, to=request.sid)
+            log.warning(f"Falha no login: '{nickname}' não escolheu o time.")
+            return
+
     # Já existe alguém com esse nome?
     existing_sid = next(
         (sid for sid, name in game_state['players'].items() if name == canonical_name),
@@ -180,6 +200,10 @@ def on_player_join(data):
         if existing_sid in game_state['answers_time']:
             game_state['answers_time'][request.sid] = game_state['answers_time'].pop(existing_sid)
         game_state.setdefault('connected', {}).pop(existing_sid, None)
+        # Mantém o time do lugar reassumido (se o aluno não escolheu outro)
+        previous_team = game_state.setdefault('teams', {}).pop(existing_sid, None)
+        if previous_team and team is None:
+            team = previous_team
         # Tokens antigos daquele SID deixam de valer
         for old_token in [t for t, s in game_state['PLAYER_SESSIONS'].items()
                           if s['sid'] == existing_sid]:
@@ -191,6 +215,12 @@ def on_player_join(data):
     game_state['competition_scores'].setdefault(request.sid, 0)
     game_state.setdefault('connected', {})[request.sid] = True
 
+    # Registra o time do jogador (apenas no modo time)
+    if team is not None:
+        game_state.setdefault('teams', {})[request.sid] = team
+    else:
+        game_state.setdefault('teams', {}).pop(request.sid, None)
+
     # Cria token de sessão para permitir reconexão
     session_token = _generate_session_token()
     game_state['PLAYER_SESSIONS'][session_token] = {
@@ -199,7 +229,7 @@ def on_player_join(data):
     }
 
     if game_state['host_sid']:
-        emit('update_player_list', list(game_state['players'].values()),
+        emit('update_player_list', game_handler.players_payload(game_state),
              to=game_state['host_sid'])
         emit('update_answer_count', {
             'answered': len(game_state['answers']),
@@ -217,6 +247,8 @@ def on_player_join(data):
         'state': game_state['state'],
         'current_question': game_state['current_question'],
         'players': len(game_state['players']),
+        'team': team,
+        'team_name': constants.TEAM_NAMES.get(team),
     }, to=request.sid)
     persistence.save_full_state(game_state, runtime.quiz_data)
 
