@@ -23,9 +23,14 @@ def clear_game_state():
         'state': constants.STATE_LOBBY,
         'question_start_time': None,
         'answers_time': {},
+        'reading_duration': None,   # segundos de leitura da pergunta atual
+        'reading_started_at': None,  # quando a fase de leitura começou
+        'answer_duration': None,    # segundos para responder a pergunta atual
+        'final_leaderboard': [],    # placar da última partida (tela de fim)
         'connected': {},        # {sid: True/False} — jogador online/offline
         'question_token': 0,    # invalida timers de perguntas antigas
         'class_slug': None,     # turma da partida atual
+        'quiz_name': None,      # quiz escolhido (para repetir a partida)
         'PLAYER_SESSIONS': {}
     }
     return game_state
@@ -64,8 +69,14 @@ def save_full_state(game_state, QUIZ_DATA, force=True):
             'state': game_state['state'],
             'question_start_time': game_state['question_start_time'],
             'answers_time': game_state['answers_time'],
+            'reading_duration': game_state.get('reading_duration'),
+            'reading_started_at': game_state.get('reading_started_at'),
+            'answer_duration': game_state.get('answer_duration'),
+            'final_leaderboard': game_state.get('final_leaderboard', []),
             'connected': game_state.get('connected', {}),
             'question_token': game_state.get('question_token', 0),
+            'class_slug': game_state.get('class_slug'),
+            'quiz_name': game_state.get('quiz_name'),
             'PLAYER_SESSIONS': game_state['PLAYER_SESSIONS']
         },
         'quiz_data': QUIZ_DATA  # current quiz being played

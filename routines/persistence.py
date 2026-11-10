@@ -43,10 +43,24 @@ def restore_full_state():
     runtime.game_state.setdefault('competition_scores', {})
     runtime.game_state.setdefault('question_start_time', None)
     runtime.game_state.setdefault('answers_time', {})
+    runtime.game_state.setdefault('reading_duration', None)
+    runtime.game_state.setdefault('reading_started_at', None)
+    runtime.game_state.setdefault('answer_duration', None)
+    runtime.game_state.setdefault('final_leaderboard', [])
     runtime.game_state.setdefault('connected', {})
     runtime.game_state.setdefault('question_token', 0)
     runtime.game_state.setdefault('class_slug', None)
+    runtime.game_state.setdefault('quiz_name', None)
     runtime.game_state['PLAYER_SESSIONS'] = saved.get('PLAYER_SESSIONS', {})
+
+    # Depois de reiniciar o servidor nenhum socket antigo existe: o host precisa
+    # se registrar de novo e os alunos precisam reconectar (o lugar deles, com
+    # pontos e respostas, é preservado). Sem isso, o estado restaurado achava
+    # que todos continuavam online e recusava a entrada deles.
+    runtime.game_state['connected'] = {
+        sid: False for sid in runtime.game_state.get('players', {})
+    }
+    runtime.game_state['host_sid'] = None
 
     runtime.quiz_data = state.get('quiz_data')
     log.info("--- Game state restored from backup ---")

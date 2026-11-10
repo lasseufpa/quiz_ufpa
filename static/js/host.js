@@ -38,7 +38,10 @@ const STATE_QUESTION    = 1;
 const STATE_ANSWER 	    = 2;
 const STATE_GAMEOVER 	= 3;
 
-const QUESTION_DURATION = 30;
+const QUESTION_DURATION = 30;   // fallback quando o servidor não manda answer_time
+
+// Duração da fase de respostas da pergunta atual (vem do servidor)
+let answerDuration = QUESTION_DURATION;
 
 let answering = false;
 
@@ -57,6 +60,19 @@ function renderMath() {
     if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
         MathJax.typesetPromise().catch(err => console.warn('MathJax error:', err));
     }
+}
+
+// Preenche uma alternativa garantindo que "texto + LaTeX + texto" flua como
+// uma única frase. Sem o <span>, o MathJax gera nós irmãos (texto, fórmula,
+// texto) e, como .option-btn é flex, cada pedaço vira um item independente:
+// a fórmula escapa da caixa e as palavras saem fora de ordem.
+function fillOption(el, letter, text) {
+    el.textContent = '';
+    const content = document.createElement('span');
+    content.className = 'option-content';
+    content.textContent = `${letter}) ${text}`;
+    el.appendChild(content);
+    return el;
 }
 
 async function loadClassList() {
@@ -102,7 +118,22 @@ async function loadQuizList() {
         opt.textContent = name;
         quizSelect.appendChild(opt);
     });
+    // Depois de recarregar a página (F5) ou de "Jogar novamente", o quiz da
+    // partida anterior já vem selecionado.
+    selectQuiz(pendingQuizName);
     updatePrepareBtn();
+}
+
+// Quiz que estava em uso (mantido entre recarregamentos da página)
+let pendingQuizName = '';
+
+function selectQuiz(name) {
+    if (!name) return;
+    const found = Array.prototype.some.call(quizSelect.options,
+        (opt) => opt.value === name);
+    if (!found) return;
+    quizSelect.value = name;
+    updateStartBtn();
 }
 
 classSelect.addEventListener('change', loadQuizList);
@@ -165,23 +196,53 @@ function openRoom() {
 }
 
 function closeRoom() {
-    // Com alunos na sala não dá para voltar: a sala precisa ficar aberta
-    if (playerListEl.children.length > 0) {
-        alert('Já há alunos na sala: não dá para trocar a turma/quiz agora.');
-        return;
+    // Trocar turma/quiz é sempre permitido: o servidor fecha a sala e expulsa
+    // os alunos (eles entram de novo quando a sala reabrir).
+    const jogadores = playerListEl.children.length;
+    if (jogadores > 0) {
+        const ok = confirm(
+            `Fechar a sala e expulsar ${jogadores} aluno(s)?\n\n` +
+            'Eles precisarão digitar o nome de novo quando a sala reabrir.'
+        );
+        if (!ok) return;
     }
-
-    lobbyWaiting.style.display = 'none';
-    lobbySetup.style.display = 'block';
-    updatePrepareBtn();
     socket.emit('close_room');
 }
+
+// Sala fechada pelo apresentador (troca de turma/quiz): volta para os seletores.
+socket.on('room_closed', () => {
+    lobbyWaiting.style.display = 'none';
+    lobbySetup.style.display = 'block';
+    lobbyView.style.display = 'block';
+    questionView.style.display = 'none';
+    resultsView.style.display = 'none';
+    gameOverView.style.display = 'none';
+    hideAnswerTimerNotification();
+    playerListEl.innerHTML = '';
+    finalScoreListEl.innerHTML = '';
+    currentQuestionData = null;
+    pendingQuizName = '';
+    quizSelect.value = '';
+    updatePrepareBtn();
+});
 
 prepareBtn.addEventListener('click', openRoom);
 document.getElementById('change-selection').addEventListener('click', (e) => {
     e.preventDefault();
     closeRoom();
 });
+// Mesma ação no menu lateral (☰), disponível em qualquer fase da partida.
+const changeSelectionMenu = document.getElementById('change-selection-menu');
+if (changeSelectionMenu) {
+    changeSelectionMenu.addEventListener('click', (e) => {
+        e.preventDefault();
+        const menu = document.getElementById('side-menu');
+        if (menu) menu.classList.remove('open');
+        const overlay = document.getElementById('side-menu-overlay');
+        if (overlay) overlay.classList.remove('open');
+        closeRoom();
+    });
+}
 
 // Atualiza a lista de jogadores no lobby
 socket.on('update_player_list', (players) => {
@@ -209,6 +270,11 @@ function forceEndQuiz() {
 forceEndBtn.addEventListener('click', forceEndQuiz);
 forceEndQuestionBtn.addEventListener('click', forceEndQuiz);
 forceEndResultsBtn.addEventListener('click', forceEndQuiz);
+
+// "Jogar novamente": só aqui a partida é zerada (F5 mantém a tela de fim)
+document.getElementById('play-again-btn').addEventListener('click', () => {
+    socket.emit('play_again');
+});
 
 // Iniciar Jogo
 startBtn.addEventListener('click', (e) => {
@@ -246,9 +312,22 @@ socket.on('show_question', (data) => {
     questionView.style.display = 'block';
 
     let remaining_time = data.remaining_time;
+    if (data.answer_time != null && Number(data.answer_time) >= 0) {
+        answerDuration = Number(data.answer_time);
+    } else if (remaining_time == null) {
+        answerDuration = QUESTION_DURATION;
+    }
     if (remaining_time == null){
         answering = false;
-        hideAnswerTimerNotification();
+        // Fase de leitura: as alternativas continuam bloqueadas.
+        const readingLeft = Number(
+            (data.reading_remaining != null) ? data.reading_remaining : (data.reading_time || 0)
+        );
+        if (readingLeft > 0) {
+            showReadingTimer(readingLeft);
+        } else {
+            hideAnswerTimerNotification();
+        }
     }
     else{
         answering = true;
@@ -278,15 +357,16 @@ socket.on('show_question', (data) => {
     renderMath();
     const optionsContainerId = 'options-list-host';
     let optionsContainer = document.getElementById(optionsContainerId);
-    
 
-    if (optionsContainer && optionsContainer.style.display === 'grid') {
+
+    // Oculta as alternativas para decidir abaixo se elas devem voltar.
+    // NÃO esconder o contador aqui: este mesmo evento 'show_question' também é
+    // reenviado pelo servidor quando um jogador cai/volta (host_join), e o
+    // contador de respostas precisa continuar correndo nesse caso — senão a
+    // pergunta fica aberta para sempre quando alguém deixa o tempo acabar.
+    if (optionsContainer) {
         optionsContainer.style.display = 'none';
-        hideAnswerTimerNotification();  
-    } else if (optionsContainer) {
-        optionsContainer.style.display = 'none';
-    }
-    if (!optionsContainer) {
+    } else {
         optionsContainer = document.createElement('div');
         optionsContainer.id = optionsContainerId;
         optionsContainer.classList.add('grid-options');
@@ -314,42 +394,62 @@ let answerTimerNotification = null;
 let answerTimerUpdateInterval = null;
 let answerTimerStartTime = null;
 
-function showAnswerTimerNotification() {
-    // Remove existing notification if any
+// Estilo comum dos contadores flutuantes (⏱️ respostas, 📖 leitura)
+const TIMER_NOTIFICATION_STYLE = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 3rem;
+    font-weight: bold;
+    z-index: 1000;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    font-family: monospace;
+    color: white;
+`;
+
+// Remove QUALQUER contador da tela (inclusive sobras que não estão mais na
+// variável de controle). Era isso que fazia o ⏱️ continuar aparecendo na tela
+// de "Distribuição das respostas".
+function hideAnswerTimerNotification() {
+    if (answerTimerUpdateInterval) {
+        clearInterval(answerTimerUpdateInterval);
+        answerTimerUpdateInterval = null;
+    }
     if (answerTimerNotification) {
         answerTimerNotification.remove();
+        answerTimerNotification = null;
     }
-    
-    // Create notification element
+    const leftovers = document.querySelectorAll('#answer-timer-notification');
+    for (let i = 0; i < leftovers.length; i++) leftovers[i].remove();
+    answerTimerStartTime = null;
+}
+
+function createTimerNotification(text, background) {
+    hideAnswerTimerNotification();
     const notification = document.createElement('div');
     notification.id = 'answer-timer-notification';
-    notification.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background-color: #2196F3;
-        color: white;
-        padding: 12px 20px;
-        border-radius: 8px;
-        font-size: 3rem;
-        font-weight: bold;
-        z-index: 1000;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-        font-family: monospace;
-    `;
-    notification.textContent = '⏱️ 30s';
+    notification.style.cssText = TIMER_NOTIFICATION_STYLE +
+        `background-color: ${background};`;
+    notification.textContent = text;
     document.body.appendChild(notification);
     answerTimerNotification = notification;
-    
+    return notification;
+}
+
+function showAnswerTimerNotification() {
+    createTimerNotification(`⏱️ ${answerDuration}s`, '#2196F3');
+
     // Start timer updates
     answerTimerStartTime = Date.now();
-    if (answerTimerUpdateInterval) clearInterval(answerTimerUpdateInterval);
     answerTimerUpdateInterval = setInterval(() => {
         if (answerTimerNotification) {
             const elapsed = Math.floor((Date.now() - answerTimerStartTime) / 1000);
-            answerTimerNotification.textContent = `⏱️ ${QUESTION_DURATION - elapsed}s`;
-            if (QUESTION_DURATION-elapsed ==0){
-                socket.emit('show_results')   
+            answerTimerNotification.textContent = `⏱️ ${answerDuration - elapsed}s`;
+            if (answerDuration - elapsed <= 0) {
+                hideAnswerTimerNotification();
+                socket.emit('show_results');
             }
         }
     }, 1000);
@@ -358,36 +458,16 @@ function showAnswerTimerNotification() {
 function showAnswerTimerWithRemaining(remainingSeconds) {
     console.log("showAnswerTimerWithRemaining", remainingSeconds);
     const totalSeconds = Math.ceil(remainingSeconds); // arredonda pra cima
-    const notification = document.createElement('div');
-    notification.id = 'answer-timer-notification';
-    notification.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background-color: #2196F3;
-        color: white;
-        padding: 12px 20px;
-        border-radius: 8px;
-        font-size: 3rem;
-        font-weight: bold;
-        z-index: 1000;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-        font-family: monospace;
-    `;
-    notification.textContent = `⏱️ ${totalSeconds}s`;
-    document.body.appendChild(notification);
-    answerTimerNotification = notification;
+    createTimerNotification(`⏱️ ${totalSeconds}s`, '#2196F3');
 
     let secondsLeft = totalSeconds;
     answerTimerUpdateInterval = setInterval(() => {
         secondsLeft--;
         if (secondsLeft <= 0) {
-            clearInterval(answerTimerUpdateInterval);
-            if (answerTimerNotification) answerTimerNotification.remove();
+            hideAnswerTimerNotification();
             socket.emit('show_results');
-        } else {
-            if (answerTimerNotification)
-                answerTimerNotification.textContent = `⏱️ ${secondsLeft}s`;
+        } else if (answerTimerNotification) {
+            answerTimerNotification.textContent = `⏱️ ${secondsLeft}s`;
         }
     }, 1000);
 }
@@ -403,6 +483,23 @@ function hideAnswerTimerNotification() {
     answerTimerStartTime = null;
 }
 
+// Contagem regressiva da fase de leitura (alternativas ainda bloqueadas).
+// O fim real é sinalizado pelo servidor pelo evento 'answer_allowed'.
+function showReadingTimer(seconds) {
+    let secondsLeft = Math.max(0, Math.ceil(seconds));
+    createTimerNotification(`\u{1F4D6} ${secondsLeft}s`, '#6c757d');
+
+    answerTimerUpdateInterval = setInterval(() => {
+        secondsLeft -= 1;
+        if (!answerTimerNotification) return;
+        if (secondsLeft > 0) {
+            answerTimerNotification.textContent = `\u{1F4D6} ${secondsLeft}s`;
+        } else {
+            hideAnswerTimerNotification();
+        }
+    }, 1000);
+}
+
 socket.on('answer_allowed', (data) => {
     console.log("Triggered answer_allowed.\n Options:")
     console.log(currentQuestionData.options);
@@ -415,7 +512,7 @@ socket.on('answer_allowed', (data) => {
     currentQuestionData.options.forEach((opt, i) => {
         const btn = document.createElement('div');
         btn.classList.add('option-btn');
-        btn.textContent = `${String.fromCharCode(65 + i)}) ${opt}`;
+        fillOption(btn, String.fromCharCode(65 + i), opt);
         optionsContainer.appendChild(btn);
     });
     optionsContainer.style.display = "grid";
@@ -465,15 +562,10 @@ document.getElementById('next-question-btn').addEventListener('click', () => {
 });
 
 // Fim de jogo
-socket.on('game_over', (leaderboard) => { // Recebe o placar ordenado (decrescente)
-    resultsView.style.display = 'none';
-    gameOverView.style.display = 'block';
-    lobbyView.style.display = 'none';
-    forceEndBtn.style.display = 'none'; // Esconde o botão no lobby
-
+function renderFinalLeaderboard(leaderboard) {
     finalScoreListEl.innerHTML = '';
 
-    if (leaderboard.length === 0) {
+    if (!leaderboard || leaderboard.length === 0) {
         const li = document.createElement('li');
         li.textContent = 'Nenhum jogador participou.';
         finalScoreListEl.appendChild(li);
@@ -513,6 +605,38 @@ socket.on('game_over', (leaderboard) => { // Recebe o placar ordenado (decrescen
 
         finalScoreListEl.appendChild(li);
     });
+}
+
+socket.on('game_over', (leaderboard) => { // Recebe o placar ordenado (decrescente)
+    resultsView.style.display = 'none';
+    gameOverView.style.display = 'block';
+    lobbyView.style.display = 'none';
+    forceEndBtn.style.display = 'none'; // Esconde o botão no lobby
+    hideAnswerTimerNotification();
+
+    renderFinalLeaderboard(leaderboard);
+});
+
+// O professor clicou em "Jogar novamente": a partida recomeça com os mesmos
+// alunos na sala (o servidor zera os pontos e volta ao lobby).
+socket.on('game_restarted', (data) => {
+    gameOverView.style.display = 'none';
+    resultsView.style.display = 'none';
+    questionView.style.display = 'none';
+    hideAnswerTimerNotification();
+    finalScoreListEl.innerHTML = '';
+    currentQuestionData = null;
+    playerListEl.innerHTML = '';
+
+    if (data && data.quiz_name) {
+        pendingQuizName = data.quiz_name;
+        selectQuiz(pendingQuizName);
+    }
+
+    lobbyView.style.display = 'block';
+    lobbySetup.style.display = 'none';
+    lobbyWaiting.style.display = 'block';
+    showWaitingPhase();
 });
 
 
@@ -538,6 +662,14 @@ socket.on('resume_host_state', (data) => {
     const question_data = data.question_data;
     const totalPlayers = data.total_players;
     const answeredCount = data.answered_count;
+
+    if (data.quiz_name) {
+        pendingQuizName = data.quiz_name;
+        selectQuiz(pendingQuizName);
+    }
+    if (data.answer_time != null && Number(data.answer_time) >= 0) {
+        answerDuration = Number(data.answer_time);
+    }
 
     currentQuestionData = {
         text: question_data.text,
@@ -591,7 +723,7 @@ socket.on('resume_host_state', (data) => {
         currentQuestionData.options.forEach((opt, i) => {
             const btn = document.createElement('div');
             btn.classList.add('option-btn');
-            btn.textContent = `${String.fromCharCode(65 + i)}) ${opt}`;
+            fillOption(btn, String.fromCharCode(65 + i), opt);
             optionsContainer.appendChild(btn);
         });
         optionsContainer.style.display = 'grid';
@@ -633,6 +765,8 @@ socket.on('resume_host_state', (data) => {
             
         case STATE_GAMEOVER:
             gameOverView.style.display = 'block';
+            // Mantém o placar final na tela mesmo depois de recarregar (F5)
+            renderFinalLeaderboard(data.leaderboard || []);
             break;
             
         default:
@@ -720,7 +854,7 @@ function showQuestionAgain() {
     currentQuestionData.options.forEach((opt, i) => {
         const optDiv = document.createElement('div');
         optDiv.classList.add('option-btn');
-        optDiv.textContent = `${String.fromCharCode(65 + i)}) ${opt}`;
+        fillOption(optDiv, String.fromCharCode(65 + i), opt);
         modalOptions.appendChild(optDiv);
     });
 

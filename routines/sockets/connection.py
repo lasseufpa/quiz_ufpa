@@ -6,9 +6,9 @@ import secrets
 import time
 
 from flask import request
-from flask_socketio import emit
+from flask_socketio import emit, join_room
 
-from routines import classes, constants, persistence, room
+from routines import classes, constants, json_store, persistence, room
 from routines import game_state_handler as game_handler
 from routines import runtime
 from routines import logger  # noqa: F401  (configura console + arquivo)
@@ -97,8 +97,14 @@ def on_restore_session(data):
             allow_answer = False
             if game_state['question_start_time'] is not None:
                 elapsed_time = time.time() - game_state['question_start_time']
-                if elapsed_time < constants.QUESTION_DURATION:
+                duration = (game_state.get('answer_duration')
+                            or constants.QUESTION_DURATION)
+                if elapsed_time < duration:
                     allow_answer = True
+
+            # Volta para a sala da partida: só quem está nela recebe
+            # perguntas/resultados.
+            join_room(constants.GAME_ROOM, sid=new_sid)
 
             emit('session_restored', {
                 'nickname': nickname,
@@ -200,9 +206,17 @@ def on_player_join(data):
             'total': game_handler.online_count(game_state)
         }, to=game_state['host_sid'])
 
+    # Entra na sala da partida: a partir daqui (e só a partir daqui) o aluno
+    # recebe pergunta, resultados e liberação de respostas.
+    join_room(constants.GAME_ROOM)
+
     emit('join_success', {
         'nickname': canonical_name,
         'session_token': session_token,
+        # Em que fase está o jogo agora (o aluno pode ter entrado no meio)
+        'state': game_state['state'],
+        'current_question': game_state['current_question'],
+        'players': len(game_state['players']),
     }, to=request.sid)
     persistence.save_full_state(game_state, runtime.quiz_data)
 
@@ -214,7 +228,7 @@ def on_clear_saved_game():
         return
 
     if os.path.exists(constants.GAME_SAVE_FILE):
-        os.remove(constants.GAME_SAVE_FILE)
+        json_store.delete_json(constants.GAME_SAVE_FILE)
         log.info("Saved game file deleted by host.")
 
     game_state.clear()

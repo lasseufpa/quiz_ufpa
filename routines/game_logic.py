@@ -7,7 +7,9 @@ devem ser chamadas de dentro de um handler de socket.
 
 import csv
 import logging
+import math
 import os
+import re
 import time
 from datetime import datetime
 
@@ -19,6 +21,7 @@ from routines import logger  # noqa: F401  (configura o console + arquivo)
 from routines import chart
 from routines import classes
 from routines import constants
+from routines import json_store
 from routines import game_state_handler as game_handler
 
 log = logging.getLogger(__name__)
@@ -82,7 +85,7 @@ def reset_game_state(game_state):
     game_state['state'] = constants.STATE_GAMEOVER
 
     if os.path.exists(constants.GAME_SAVE_FILE):
-        os.remove(constants.GAME_SAVE_FILE)
+        json_store.delete_json(constants.GAME_SAVE_FILE)
         log.info("Saved game file deleted by host.")
 
 
@@ -97,7 +100,13 @@ def _build_leaderboard(game_state):
 
 
 def finish_game(game_state, quiz_data):
-    """Encerra o quiz: exporta o CSV, anuncia o placar e reseta o estado."""
+    """Encerra o quiz: exporta o CSV, anuncia o placar e MANTÉM o estado final.
+
+    O estado não é limpo de propósito: enquanto o professor estiver na tela de
+    fim de quiz, host e alunos podem recarregar a página (F5) e voltam para o
+    mesmo lugar. A partida só é zerada quando o professor clica em "Jogar
+    novamente" (`reset_for_new_match`).
+    """
     log.info("Fim do quiz.")
     leaderboard = _build_leaderboard(game_state)
     export_scores_to_csv(
@@ -107,22 +116,134 @@ def finish_game(game_state, quiz_data):
         quiz_data,
         classes.name_of(game_state.get('class_slug')) or None,
     )
-    emit('game_over', leaderboard, broadcast=True)
-    reset_game_state(game_state)
+
+    game_state['state'] = constants.STATE_GAMEOVER
+    game_state['final_leaderboard'] = leaderboard
+    game_state['question_start_time'] = None
+    game_state['answers'] = {}
+    game_state['answers_time'] = {}
+    game_handler.save_full_state(game_state, quiz_data)
+
+    emit('game_over', leaderboard, to=constants.GAME_ROOM)
+
+
+def reset_for_new_match(game_state, quiz_data):
+    """Zera a partida mantendo os alunos na sala (botão "Jogar novamente").
+
+    Diferente de `reset_game_state`, não apaga jogadores nem a turma: todos
+    continuam no contexto do apresentador e basta clicar em "Iniciar Jogo".
+    """
+    game_state['current_question'] = -1
+    game_state['answers'] = {}
+    game_state['answers_time'] = {}
+    game_state['scores'] = {sid: 0 for sid in game_state['players']}
+    game_state['competition_scores'] = {sid: 0 for sid in game_state['players']}
+    game_state['state'] = constants.STATE_LOBBY
+    game_state['final_leaderboard'] = []
+    game_state['question_start_time'] = None
+    game_state['reading_duration'] = None
+    game_state['reading_started_at'] = None
+    game_state['answer_duration'] = None
+    game_state['question_token'] = game_state.get('question_token', 0) + 1
+    game_handler.save_full_state(game_state, quiz_data)
+    log.info("Partida zerada para um novo jogo (alunos mantidos na sala).")
 
 
 # -------------------- Fase de leitura --------------------
-def reading_timer(socketio, game_state, quiz_data):
-    """Agenda a liberação das respostas após READING_DURATION segundos."""
+_MATH_MARKUP = re.compile(r'\\[a-zA-Z]+|[{}$\\]')
+
+
+def visible_length(text):
+    """Nº de caracteres "legíveis" do enunciado (ignora o markup de LaTeX).
+
+    Assim uma fórmula como `$\\dfrac{\\Delta}{2}$` não inflaciona o tempo de
+    leitura: contam-se apenas os caracteres que o aluno realmente lê.
+    """
+    if not text:
+        return 0
+    return len(_MATH_MARKUP.sub('', text).strip())
+
+
+def answer_seconds_for(question):
+    """Tempo (s) para o aluno escolher uma alternativa.
+
+    Prioridade:
+      1. `answer_time` definido na pergunta (0 = encerra na hora);
+      2. cálculo automático pelo tamanho das ALTERNATIVAS — sem tempo mínimo,
+         apenas com teto (ANSWER_MAX_DURATION). Alternativas longas dão mais
+         tempo; alternativas curtas dão pouco.
+    """
+    if not isinstance(question, dict):
+        return constants.QUESTION_DURATION
+
+    explicit = question.get('answer_time')
+    if explicit is not None and explicit != '':
+        try:
+            value = int(round(float(explicit)))
+            return max(0, min(value, constants.ANSWER_MAX_EXPLICIT))
+        except (TypeError, ValueError):
+            log.warning(
+                f"answer_time inválido ({explicit!r}); usando o cálculo automático."
+            )
+
+    chars = sum(visible_length(opt) for opt in (question.get('options') or []))
+    if chars <= 0:
+        return constants.QUESTION_DURATION
+
+    seconds = int(math.ceil(chars / constants.ANSWER_CHARS_PER_SECOND))
+    return min(seconds, constants.ANSWER_MAX_DURATION)
+
+
+def reading_seconds_for(question):
+    """Tempo (s) entre exibir a pergunta e liberar as respostas.
+
+    Prioridade:
+      1. `reading_time` definido na pergunta (0 = libera as respostas na hora);
+      2. cálculo automático pelo tamanho do enunciado — comportamento legado de
+         ~15 caracteres por segundo, limitado entre READING_MIN_DURATION e
+         READING_MAX_DURATION.
+    """
+    if not isinstance(question, dict):
+        return constants.READING_DURATION
+
+    explicit = question.get('reading_time')
+    if explicit is not None and explicit != '':
+        try:
+            value = int(round(float(explicit)))
+            return max(0, min(value, constants.READING_MAX_EXPLICIT))
+        except (TypeError, ValueError):
+            log.warning(
+                f"reading_time inválido ({explicit!r}); usando o cálculo automático."
+            )
+
+    chars = visible_length(question.get('text', ''))
+    if chars <= 0:
+        return constants.READING_DURATION
+
+    seconds = round(chars / constants.READING_CHARS_PER_SECOND)
+    return max(constants.READING_MIN_DURATION,
+               min(constants.READING_MAX_DURATION, seconds))
+
+
+def reading_timer(socketio, game_state, quiz_data, seconds=None):
+    """Agenda a liberação das respostas após o tempo de leitura da pergunta."""
     log.debug("called reading_timer()")
     token = game_state.get('question_token', 0)
+    if seconds is None:
+        question = quiz_data['questions'][game_state['current_question']]
+        seconds = reading_seconds_for(question)
+
+    game_state['reading_duration'] = seconds
+    game_state['reading_started_at'] = time.time()
+
     socketio.start_background_task(
-        _timeout_reading_timer, socketio, game_state, quiz_data, token
+        _timeout_reading_timer, socketio, game_state, quiz_data, token, seconds
     )
 
 
-def _timeout_reading_timer(socketio, game_state, quiz_data, token):
-    socketio.sleep(constants.READING_DURATION)
+def _timeout_reading_timer(socketio, game_state, quiz_data, token, seconds):
+    if seconds > 0:
+        socketio.sleep(seconds)
 
     # Ignora o timer se a pergunta já mudou ou se os resultados já apareceram.
     if (game_state.get('question_token', 0) != token
@@ -137,7 +258,7 @@ def _timeout_reading_timer(socketio, game_state, quiz_data, token):
     current_host = game_state.get('host_sid')
     log.debug("Timeout")
     if current_host:
-        socketio.emit('answer_allowed')
+        socketio.emit('answer_allowed', to=constants.GAME_ROOM)
 
 
 # -------------------- Fluxo de perguntas --------------------
@@ -154,6 +275,9 @@ def advance_question(socketio, game_state, quiz_data):
     game_state['current_question'] += 1
     game_state['state'] = constants.STATE_QUESTION
     game_state['question_start_time'] = None
+    game_state['reading_duration'] = None
+    game_state['reading_started_at'] = None
+    game_state['answer_duration'] = None
     game_state['question_token'] = game_state.get('question_token', 0) + 1
     q_index = game_state['current_question']
 
@@ -166,21 +290,26 @@ def advance_question(socketio, game_state, quiz_data):
     chart_path = ""
     if figure != "none":
         chart_path = f"{constants.UPLOAD_FOLDER}/{figure}"
+    reading_seconds = reading_seconds_for(question_data)
+    answer_seconds = answer_seconds_for(question_data)
+    game_state['answer_duration'] = answer_seconds
     payload = {
         'text': question_data['text'],
         'options': question_data['options'],
         'question_index': q_index,
         'total_questions': len(quiz_data['questions']),
-        'chart_path': chart_path
+        'chart_path': chart_path,
+        'reading_time': reading_seconds,
+        'answer_time': answer_seconds,
     }
 
-    emit('show_question', payload, broadcast=True)
+    emit('show_question', payload, to=constants.GAME_ROOM)
     if game_state['host_sid']:
         emit('update_answer_count', {
             'answered': 0,
             'total': game_handler.online_count(game_state)
         }, to=game_state['host_sid'])
-    reading_timer(socketio, game_state, quiz_data)
+    reading_timer(socketio, game_state, quiz_data, reading_seconds)
     game_handler.save_full_state(game_state, quiz_data)
 
 
@@ -296,7 +425,7 @@ def show_results(game_state, quiz_data):
         'answer_distribution': answer_distribution,
         'chart_path': combined_chart_path,
     }
-    emit('show_results', payload, broadcast=True)
+    emit('show_results', payload, to=constants.GAME_ROOM)
     log.info("Mostrando resultados com gráfico combinado.")
     game_state['state'] = constants.STATE_ANSWER
     # Invalida o timer de leitura pendente, se ainda houver

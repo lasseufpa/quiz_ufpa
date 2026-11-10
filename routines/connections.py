@@ -26,6 +26,7 @@ def connect_host(game_state, QUIZ_DATA):
 
     # Set the new host
     game_state['host_sid'] = request.sid
+    join_room(constants.GAME_ROOM)
     log.info(f"Anfitrião conectado/substituído: {request.sid}")
 
     # --- Act like a page refresh: send current state to the new host ---
@@ -39,7 +40,17 @@ def connect_host(game_state, QUIZ_DATA):
         """Tempo restante da pergunta (None enquanto a fase de leitura roda)."""
         if elapsed_time is None:
             return None
-        return max(0, constants.QUESTION_DURATION - elapsed_time)
+        duration = game_state.get('answer_duration') or constants.QUESTION_DURATION
+        return max(0, duration - elapsed_time)
+
+    def _reading_left():
+        """Segundos que faltam da fase de leitura (None se ela já acabou)."""
+        started = game_state.get('reading_started_at')
+        duration = game_state.get('reading_duration')
+        if started is None or not duration:
+            return None
+        left = duration - (time.time() - started)
+        return round(left) if left > 0 else None
 
     # 2. If there are players and a quiz is loaded, send the appropriate state
     if game_state['players'] and QUIZ_DATA is not None:
@@ -57,7 +68,9 @@ def connect_host(game_state, QUIZ_DATA):
             'question_index': q_index,
             'total_players': game_handler.online_count(game_state),
             'answered_count': len(game_state['answers']),
-            'remaining_time': _remaining()
+            'remaining_time': _remaining(),
+            'leaderboard': game_state.get('final_leaderboard', []),
+            'quiz_name': game_state.get('quiz_name')
         }, to=game_state['host_sid'])
 
         # If game is in QUESTION state, resend the current question
@@ -72,7 +85,10 @@ def connect_host(game_state, QUIZ_DATA):
                 'question_index': q_index,
                 'total_questions': len(QUIZ_DATA['questions']),
                 'chart_path': chart_path,
-                'remaining_time': _remaining()
+                'remaining_time': _remaining(),
+                'reading_time': game_state.get('reading_duration'),
+                'reading_remaining': _reading_left(),
+                'answer_time': game_state.get('answer_duration')
             }
             emit('show_question', payload, to=game_state['host_sid'])  # only to host (others already have it)
             # Also optionally broadcast the answer count to the new host

@@ -203,6 +203,8 @@
         <button id="side-menu-close" class="side-menu-close" aria-label="Fechar menu">✕</button>
     </div>
     <nav>
+        <p class="side-menu-title">Partida</p>
+        <a href="#" id="change-selection-menu">↩ Trocar turma/quiz (fecha a sala)</a>
         <p class="side-menu-title">Guias de uso</p>
         <a href="{{ url_for('tutorial') }}#apresentador" target="_blank" rel="noopener">🎤 Guia do apresentador</a>
         <a href="{{ url_for('tutorial') }}#editor" target="_blank" rel="noopener">📝 Guia do editor</a>
@@ -297,6 +299,10 @@
     <h4>Placar Final:</h4>
     <ul id="final-score-list" class="player-list">
     </ul>
+    <button id="play-again-btn" class="btn btn-primary" style="margin-top: 24px;">Jogar novamente</button>
+    <p style="margin-top: 12px; font-size: 0.8rem; color: #888;">
+        A tela permanece assim (mesmo ao recarregar) até você iniciar uma nova partida.
+    </p>
 </div>
 {% endblock %}
 

@@ -8,7 +8,7 @@ import time
 import zipfile
 from io import BytesIO
 
-from flask import jsonify, request, send_file, send_from_directory
+from flask import jsonify, request, send_file
 
 from routines import classes, constants, files_handler, runtime
 from routines import logger  # noqa: F401  (configura console + arquivo)
@@ -136,9 +136,11 @@ def api_upload_image():
     })
 
 
-def uploaded_file(filename):
-    """Serve as figuras enviadas pelo editor."""
-    return send_from_directory(constants.UPLOAD_FOLDER, filename)
+# As figuras são servidas pela rota estática padrão do Flask
+# (`/static/quiz-figures/<arquivo>`). Havia aqui uma rota extra com o mesmo
+# caminho que "sombreava" a estática e resolvia `UPLOAD_FOLDER` (relativo)
+# contra `app.root_path` (/app/routines) em vez da raiz do projeto — por isso
+# toda figura dava 404.
 
 
 def api_export_quiz():
@@ -266,6 +268,5 @@ def register(app):
 
     # Figuras e pacotes .quiz
     app.add_url_rule('/api/upload_image', 'api_upload_image', api_upload_image, methods=['POST'])
-    app.add_url_rule('/static/quiz-figures/<filename>', 'uploaded_file', uploaded_file)
     app.add_url_rule('/api/quiz/export', 'api_export_quiz', api_export_quiz, methods=['POST'])
     app.add_url_rule('/api/quiz/import', 'api_import_quiz', api_import_quiz, methods=['POST'])

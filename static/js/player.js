@@ -12,6 +12,7 @@ const optionsGrid = document.getElementById('options-grid');
 const questionTextEl = document.getElementById('question-text');
 const resultTextEl = document.getElementById('result-text');
 const scoreDisplayEl = document.getElementById('score-display');
+const waitMessageEl = document.getElementById('wait-message');
 
 const STATE_LOBBY = 0
 const STATE_QUESTION = 1
@@ -25,6 +26,10 @@ let lastAnsweredQuestionIndex = null; // stores the index of the question answer
 let mySid = null;
 let myTeam = null;
 let sessionToken = localStorage.getItem('quizSessionToken');
+// Só recebe/mostra eventos de jogo depois que o servidor confirma a entrada.
+// Sem isso, quem ainda está digitando o nome via as alternativas aparecerem
+// quando o professor iniciava a partida.
+let joined = false;
 
 // Verificar sessão existente ao carregar a página
 window.addEventListener('load', () => {
@@ -130,6 +135,7 @@ const buttons = optionsGrid.querySelectorAll('.option-btn');
 }
 
 socket.on('answer_allowed', () => {
+    if (!joined) return;
     // Habilita todos os botões que ainda não foram respondidos
     allow_answers();
 });
@@ -190,10 +196,40 @@ socket.on('room_info', (data) => {
     }
 });
 
+// O professor fechou a sala (para trocar turma/quiz): todos precisam entrar
+// de novo quando ela abrir. Mesmo quem já estava jogando volta para a entrada.
+socket.on('room_closed', (data) => {
+    localStorage.removeItem('quizSessionToken');
+    localStorage.removeItem('answerSubmitted');
+    localStorage.removeItem('lastAnsweredQuestionIndex');
+    localStorage.removeItem('correctOptionIndex');
+
+    sessionToken = null;
+    myLastAnswerIndex = null;
+    lastAnsweredQuestionIndex = null;
+    allow_answer = false;
+    joined = false;
+    scoreDisplayEl.textContent = '0';
+    nicknameDisplay.textContent = '';
+    nicknameInput.value = '';
+
+    questionView.style.display = 'none';
+    resultView.style.display = 'none';
+    waitView.style.display = 'none';
+    joinView.style.display = 'block';
+
+    if (data && data.reason) {
+        roomClosedEl.textContent = data.reason;
+    }
+    roomClosedEl.style.display = 'block';
+    joinBtn.disabled = true;
+});
+
 
 // Servidor confirmou a entrada
 
 socket.on('join_success', (data) => {
+    joined = true;
     joinView.style.display = 'none';
     waitView.style.display = 'block';
     nicknameDisplay.textContent = data.nickname;
@@ -208,6 +244,7 @@ socket.on('join_success', (data) => {
 // Servidor restaurou a sessão
 socket.on('session_restored', (data) => {
 console.log('Sessão restaurada com sucesso, gamestate = '+data.state);
+joined = true;
 joinView.style.display = 'none';
 waitView.style.display = 'block';
 nicknameDisplay.textContent = data.nickname;
@@ -249,6 +286,10 @@ if (data.current_question >= 0) {
     if (data.state == STATE_ANSWER) {
         update_waiting_screen(myLastAnswerIndex, correctOptionIndex);
     }
+    if (data.state == STATE_GAMEOVER) {
+        resultView.style.display = 'block';
+        resultTextEl.textContent = 'O JOGO TERMINOU! Obrigado por jogar.';
+    }
     if (allow_answer){
     allow_answers();
     }
@@ -259,6 +300,7 @@ socket.on('session_restore_failed', (data) => {
     console.log('Falha ao restaurar sessão:', data.reason);
     localStorage.removeItem('quizSessionToken');
     sessionToken = null;
+    joined = false;
     joinView.style.display = 'block';
     waitView.style.display = 'none';
     joinBtn.disabled = false;
@@ -267,6 +309,7 @@ socket.on('session_restore_failed', (data) => {
 
 // Servidor enviou uma pergunta
 socket.on('show_question', (data) => {
+    if (!joined) return;
     console.log('inside socket.on');
     show_question(data);
     localStorage.removeItem('answerSubmitted');
@@ -284,6 +327,7 @@ socket.on('answer_received', () => {
 
 // Servidor enviou os resultados
 socket.on('show_results', (data) => {
+    if (!joined) return;
     questionView.style.display = 'none';
     resultView.style.display = 'block';
 
@@ -303,6 +347,7 @@ socket.on('show_results', (data) => {
 });
 
 socket.on('game_over', (scores) => {
+    if (!joined) return;
     questionView.style.display = 'none';
     resultView.style.display = 'block';
     resultTextEl.textContent = 'O JOGO TERMINOU! Obrigado por jogar.';
@@ -311,6 +356,25 @@ socket.on('game_over', (scores) => {
     if (playerEntry) {
         scoreDisplayEl.textContent = playerEntry.score;
     }
+});
+
+// O professor clicou em "Jogar novamente": volta para a tela de espera,
+// sem sair da sala (os pontos zeram, o nome continua valendo).
+socket.on('game_restarted', () => {
+    questionView.style.display = 'none';
+    resultView.style.display = 'none';
+    joinView.style.display = 'none';
+    waitView.style.display = 'block';
+    if (waitMessageEl) {
+        waitMessageEl.textContent = 'Aguarde o professor iniciar o jogo...';
+    }
+    scoreDisplayEl.textContent = '0';
+    myLastAnswerIndex = null;
+    lastAnsweredQuestionIndex = null;
+    allow_answer = false;
+    localStorage.removeItem('answerSubmitted');
+    localStorage.removeItem('lastAnsweredQuestionIndex');
+    localStorage.removeItem('correctOptionIndex');
 });
     
 

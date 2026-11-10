@@ -63,6 +63,23 @@ def write_json(path, data, indent=2):
     _atomic_write(path, data, indent)
 
 
+def delete_json(path):
+    """Apaga o JSON e o seu backup (e um `.tmp` que tenha sobrado).
+
+    Apagar só o principal não basta: `read_json` recria o arquivo a partir do
+    `.bak`, o que faria uma partida já encerrada voltar ao reiniciar o servidor.
+    """
+    removed = []
+    for candidate in (path, backup_path(path), f"{path}.tmp"):
+        try:
+            if os.path.exists(candidate):
+                os.remove(candidate)
+                removed.append(candidate)
+        except OSError as e:
+            log.warning("Não foi possível apagar %s: %s", candidate, e)
+    return removed
+
+
 def read_json(path):
     """Lê o JSON, recuperando do backup se necessário.
 
