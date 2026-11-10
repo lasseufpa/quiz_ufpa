@@ -11,8 +11,6 @@ static/mathjax
 */tex
 .github
 node_modules/
-package.json
-package-lock.json
 static/@mathjax
 logs/
 *.json.bak

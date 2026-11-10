@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "mathjax": "^4.1.3"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
+  },
+  "scripts": {
+    "sim": "node tools/simulate_class.js"
+  }
+}
