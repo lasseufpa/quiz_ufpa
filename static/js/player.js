@@ -187,6 +187,9 @@ socket.on('room_info', (data) => {
     roomClassNameEl.textContent = aberta ? data.class_name : '';
     roomInfoEl.style.display = aberta ? 'block' : 'none';
     roomClosedEl.style.display = aberta ? 'none' : 'block';
+    if (aberta) {
+        roomClosedEl.textContent = 'Aguardando o professor abrir a sala...';
+    }
 
     if (!aberta) {
         joinBtn.disabled = true;
@@ -233,6 +236,17 @@ socket.on('join_success', (data) => {
     joinView.style.display = 'none';
     waitView.style.display = 'block';
     nicknameDisplay.textContent = data.nickname;
+
+    // O aluno pode ter entrado com o jogo já em andamento: avisa em vez de
+    // jogar as alternativas na tela dele.
+    if (waitMessageEl) {
+        if (data && data.state === STATE_LOBBY) {
+            waitMessageEl.textContent = 'Aguarde o professor iniciar o jogo...';
+        } else {
+            waitMessageEl.textContent =
+                'A partida já começou! Você entra na próxima pergunta.';
+        }
+    }
     
     // Salvar o token da sessão no localStorage
     if (data.session_token) {
