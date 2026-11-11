@@ -35,6 +35,7 @@ def on_start_game(data):
 
     game_state['class_slug'] = class_slug
     game_state['quiz_name'] = data.get('quiz-name')
+    game_state['total_questions'] = len(runtime.quiz_data.get('questions') or [])
     persistence.save_full_state(game_state, runtime.quiz_data)
     log.info(f"Iniciando o jogo da turma '{classes.name_of(class_slug)}'!")
     game_logic.advance_question(runtime.socketio, game_state, runtime.quiz_data)
@@ -85,11 +86,16 @@ def on_close_room():
     had_players = len(game_state['players'])
     player_sids = list(game_state['players'].keys())
 
+    # Avisa quem estava na sala — e sempre o apresentador, que precisa voltar
+    # para a tela de escolha mesmo quando ninguém tinha entrado ainda.
+    room_closed_payload = {
+        'reason': 'O professor fechou a sala para trocar a turma/quiz. '
+                  'Digite seu nome novamente quando ela abrir.'
+    }
     if had_players:
-        emit('room_closed', {
-            'reason': 'O professor fechou a sala para trocar a turma/quiz. '
-                      'Digite seu nome novamente quando ela abrir.'
-        }, broadcast=True)
+        emit('room_closed', room_closed_payload, broadcast=True)
+    else:
+        emit('room_closed', room_closed_payload, to=request.sid)
 
     # Tira os expulsos da sala da partida: se ficassem, receberiam as
     # perguntas da próxima partida enquanto ainda estão na tela de entrada.
@@ -128,6 +134,11 @@ def on_submit_answer(data):
 
 def on_show_results():
     game_logic.show_results(runtime.game_state, runtime.quiz_data)
+
+
+def on_export_results_image():
+    """O apresentador pediu a imagem dos resultados (PNG) para baixar."""
+    game_logic.export_results_image(runtime.game_state, runtime.quiz_data)
 
 
 def on_force_end_quiz():
@@ -172,5 +183,6 @@ def register(socketio):
     socketio.on('next_question')(on_next_question)
     socketio.on('submit_answer')(on_submit_answer)
     socketio.on('show_results')(on_show_results)
+    socketio.on('export_results_image')(on_export_results_image)
     socketio.on('force_end_quiz')(on_force_end_quiz)
     socketio.on('play_again')(on_play_again)

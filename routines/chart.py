@@ -4,21 +4,6 @@ import matplotlib.pyplot as plt
 import os
 import matplotlib.patches as patches 
 
-def save_answer_distribution_chart(answer_distribution, question_data, question_index):
-    os.makedirs('static/graphs', exist_ok=True)
-    labels = ['A', 'B', 'C', 'D'][:len(answer_distribution)]
-    values = answer_distribution
-    plt.figure(figsize=(5,3))
-    plt.bar(labels, values, color=['#007bff', '#28a745', '#ffc107', '#dc3545'][:len(values)])
-    plt.title(f"Distribuição das respostas - Pergunta {question_index + 1}")
-    plt.xlabel("Alternativas")
-    plt.ylabel("Número de respostas")
-    plt.tight_layout()
-    filename = f"static/graphs/q{question_index + 1}_results.png"
-    plt.savefig(filename)
-    plt.close()
-    return filename
-
 
 def _draw_team_standings(ax, standings):
     """Desenha o painel do modo time: quem está ganhando e os melhores de cada time."""

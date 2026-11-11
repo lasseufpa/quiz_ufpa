@@ -19,6 +19,18 @@ const correctTextEl = document.getElementById('correct-answer-text');
 const scoreListEl = document.getElementById('score-list');
 const finalScoreListEl = document.getElementById('final-score-list');
 
+// Tela de resultados (desenhada no cliente)
+const resultsStepEl = document.getElementById('results-step');
+const resultsQuestionEl = document.getElementById('results-question');
+const resultsTotalEl = document.getElementById('results-total');
+const resultsBarsEl = document.getElementById('results-bars');
+const resultsEmptyEl = document.getElementById('results-empty');
+const resultsStandingsEl = document.getElementById('results-standings');
+const resultsStandingsTitleEl = document.getElementById('results-standings-title');
+const resultsExplanationCardEl = document.getElementById('results-explanation-card');
+const resultsExplanationEl = document.getElementById('results-explanation');
+const downloadResultsBtn = document.getElementById('download-results-btn');
+
 const quizSelect = document.getElementById('quiz-select');
 const classSelect = document.getElementById('class-select');
 const chartImg = document.getElementById('question-chart');
@@ -52,11 +64,19 @@ let answerDuration = QUESTION_DURATION;
 let answering = false;
 
 let currentQuestionData = null; // stores text, options, chart_path, index, total
-// Avisa o servidor que esta é a tela do host
-socket.emit('host_join');
+// Avisa o servidor que esta é a tela do host — em toda conexão (inclusive
+// depois de o servidor reiniciar, quando o socket se reconecta sozinho e o
+// servidor não sabe mais quem é o apresentador).
+if (socket.connected) {
+    socket.emit('host_join');
+}
+socket.on('connect', () => {
+    socket.emit('host_join');
+});
 
 // Erros enviados pelo servidor (quiz inválido, host já conectado, etc.)
 socket.on('admin_error', (data) => {
+    resetDownloadResultsBtn();
     alert('Erro: ' + (data && data.message ? data.message : data));
 });
 
@@ -573,16 +593,193 @@ document.getElementById('show-results-btn').addEventListener('click', () => {
 socket.on('show_results', (data) => {
     hideAnswerTimerNotification();
     questionView.style.display = 'none';
-    
-    correctTextEl.textContent = data.correct_option_text;
+    renderResults(data);
+});
 
-    renderMath();
-    
-    // Atualiza a imagem do gráfico gerado pelo Python
-    const chartImg = document.getElementById('results-chart');
-    chartImg.src = data.chart_path + '?t=' + new Date().getTime(); // força atualização
+// -------------------- Tela de resultados --------------------
+function medalFor(index) {
+    return ['\u{1F947}', '\u{1F948}', '\u{1F949}'][index] || '';
+}
+
+function renderResultBars(data) {
+    const options = data.options || (currentQuestionData && currentQuestionData.options) || [];
+    const distribution = data.answer_distribution || [];
+    const total = (typeof data.answers_total === 'number')
+        ? data.answers_total
+        : distribution.reduce((soma, n) => soma + n, 0);
+
+    resultsBarsEl.innerHTML = '';
+    resultsEmptyEl.style.display = total > 0 ? 'none' : 'block';
+    resultsBarsEl.style.display = total > 0 ? 'grid' : 'none';
+
+    if (resultsTotalEl) {
+        const online = data.players_online;
+        resultsTotalEl.textContent = (typeof online === 'number')
+            ? `${total} de ${online} responderam`
+            : `${total} resposta${total === 1 ? '' : 's'}`;
+    }
+
+    const maior = Math.max(1, ...distribution);
+    const fills = [];
+
+    options.forEach((texto, index) => {
+        const qtd = distribution[index] || 0;
+        const pct = total > 0 ? Math.round((qtd / total) * 100) : 0;
+        const correta = index === data.correct_option;
+
+        const row = document.createElement('div');
+        row.className = 'answer-row' + (correta ? ' correct' : '');
+
+        const letra = document.createElement('span');
+        letra.className = 'answer-letter';
+        letra.textContent = String.fromCharCode(65 + index);
+
+        const track = document.createElement('div');
+        track.className = 'answer-track';
+        const fill = document.createElement('div');
+        fill.className = 'answer-fill';
+        track.appendChild(fill);
+        fills.push({ el: fill, pct: Math.round((qtd / maior) * 100) });
+
+        const valor = document.createElement('span');
+        valor.className = 'answer-value';
+        valor.textContent = `${pct}% \u00b7 ${qtd}` + (correta ? ' \u2713' : '');
+
+        row.appendChild(letra);
+        row.appendChild(track);
+        row.appendChild(valor);
+
+        if (texto) {
+            const desc = document.createElement('p');
+            desc.className = 'answer-text';
+            desc.textContent = String.fromCharCode(65 + index) + ') ' + texto;
+            desc.title = texto;
+            row.appendChild(desc);
+        }
+
+        resultsBarsEl.appendChild(row);
+    });
+
+    // Anima as barras depois de entrarem na tela
+    requestAnimationFrame(() => {
+        fills.forEach((item) => { item.el.style.width = item.pct + '%'; });
+    });
+}
+
+function renderResultStandings(data) {
+    resultsStandingsEl.innerHTML = '';
+    const emTimes = !!data.team_mode && (data.teams || []).length > 0;
+    resultsStandingsTitleEl.textContent = emTimes ? 'Placar por time' : 'Pódio da pergunta';
+
+    if (emTimes) {
+        data.teams.forEach((team) => {
+            const cabecalho = document.createElement('li');
+            cabecalho.className = 'is-team' + (team.winning ? ' is-winner' : '');
+            const posicao = team.tied ? 'empate' : `${team.position}\u00ba`;
+            const nome = document.createElement('span');
+            nome.textContent = `${team.winning ? '\u{1F3C6} ' : ''}${team.name}`;
+            const pts = document.createElement('span');
+            pts.textContent = `${team.score} pts \u00b7 ${posicao}`;
+            cabecalho.appendChild(nome);
+            cabecalho.appendChild(pts);
+            resultsStandingsEl.appendChild(cabecalho);
+
+            (team.top || []).forEach((member, index) => {
+                const li = document.createElement('li');
+                li.className = 'is-member';
+                const nome = document.createElement('span');
+                nome.textContent = `${index + 1}. ${member.nickname}`;
+                const pts = document.createElement('span');
+                pts.textContent = String(member.score);
+                li.appendChild(nome);
+                li.appendChild(pts);
+                resultsStandingsEl.appendChild(li);
+            });
+        });
+        return;
+    }
+
+    const podio = data.podium || [];
+    if (podio.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'muted';
+        li.textContent = 'Ninguém pontuou nesta pergunta.';
+        resultsStandingsEl.appendChild(li);
+        return;
+    }
+
+    podio.forEach((jogador, index) => {
+        const li = document.createElement('li');
+        if (index === 0) li.className = 'is-winner';
+        const nome = document.createElement('span');
+        nome.textContent = `${medalFor(index)} ${jogador.nickname}`.trim();
+        const pts = document.createElement('span');
+        pts.textContent = `${jogador.score} pts`;
+        li.appendChild(nome);
+        li.appendChild(pts);
+        resultsStandingsEl.appendChild(li);
+    });
+}
+
+function renderResults(data) {
+    data = data || {};
+
+    const indice = (typeof data.question_index === 'number')
+        ? data.question_index
+        : (currentQuestionData ? currentQuestionData.question_index : 0);
+    const totalPerguntas = data.total_questions
+        || (currentQuestionData ? currentQuestionData.total_questions : 0);
+
+    if (resultsStepEl) resultsStepEl.textContent = `Pergunta ${indice + 1} de ${totalPerguntas}`;
+
+    const textoPergunta = data.question_text
+        || (currentQuestionData ? currentQuestionData.text : '')
+        || (document.getElementById('question-text') || {}).textContent
+        || '';
+    if (resultsQuestionEl) resultsQuestionEl.textContent = textoPergunta;
+
+    correctTextEl.textContent = data.correct_option_text || '';
+
+    // Justificativa da pergunta (opcional): só aparece quando o professor
+    // escreveu uma no editor.
+    const justificativa = (data.explanation || '').trim();
+    if (resultsExplanationEl && resultsExplanationCardEl) {
+        resultsExplanationEl.textContent = justificativa;
+        resultsExplanationCardEl.style.display = justificativa ? 'block' : 'none';
+    }
+
+    renderResultBars(data);
+    renderResultStandings(data);
+
     resultsView.style.display = 'block';
+    renderMath();  // tiposeta o enunciado/alternativas com LaTeX
+}
 
+// "Baixar imagem": o servidor gera o PNG (matplotlib) sob demanda
+function resetDownloadResultsBtn() {
+    if (!downloadResultsBtn) return;
+    downloadResultsBtn.disabled = false;
+    downloadResultsBtn.textContent = '\u{1F4F7} Baixar imagem';
+}
+
+if (downloadResultsBtn) {
+    downloadResultsBtn.addEventListener('click', () => {
+        downloadResultsBtn.disabled = true;
+        downloadResultsBtn.textContent = '\u23F3 Gerando…';
+        socket.emit('export_results_image');
+    });
+}
+
+socket.on('results_image_ready', (data) => {
+    resetDownloadResultsBtn();
+    if (!data || !data.path) return;
+
+    const link = document.createElement('a');
+    link.href = data.path + '?t=' + Date.now();
+    link.download = data.filename || 'resultados.png';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
 });
 
 

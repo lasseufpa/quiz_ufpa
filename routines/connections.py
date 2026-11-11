@@ -2,12 +2,11 @@ from flask import Flask, render_template, request, session, redirect, url_for, f
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import logging
 import time
-import os
 
 from routines import logger  # noqa: F401  (configura o console + arquivo)
 from routines import constants
+from routines import game_logic
 from routines import game_state_handler as game_handler
-from routines import chart
 
 log = logging.getLogger(__name__)
 
@@ -101,28 +100,13 @@ def connect_host(game_state, QUIZ_DATA):
 
         # If game is in ANSWER state, resend the results
         elif game_state['state'] == constants.STATE_ANSWER and game_state['current_question'] >= 0:
-            q_index = game_state['current_question']
-            question_data = QUIZ_DATA['questions'][q_index]
-            correct_option_index = question_data['correct_option']
-            correct_option_text = question_data['options'][correct_option_index]
-            answer_distribution = [0] * len(question_data['options'])
-            for ans in game_state['answers'].values():
-                try:
-                    answer_distribution[int(ans)] += 1
-                except:
-                    pass
-            chart_path = f"static/graphs/q{q_index + 1}_results.png"
-            if not os.path.exists(chart_path):
-                chart_path = chart.save_answer_distribution_chart(answer_distribution, question_data, q_index)
-            payload = {
-                'correct_option': correct_option_index,
-                'correct_option_text': chr(ord('A')+correct_option_index) + ') ' + correct_option_text,
-                'scores': game_state['scores'],
-                'players': game_state['players'],
-                'answer_distribution': answer_distribution,
-                'chart_path': chart_path
-            }
-            emit('show_results', payload, to=game_state['host_sid'])
+            # O mesmo payload da tela de resultados (o apresentador desenha no
+            # navegador, então o F5 volta exatamente para a mesma tela).
+            payload = game_state.get('last_results')
+            if payload is None:
+                payload = game_logic.build_results_payload(game_state, QUIZ_DATA)
+            if payload:
+                emit('show_results', payload, to=game_state['host_sid'])
 
     # Optional: broadcast to players that a new host is in control (if desired)
     if old_host_sid != request.sid:

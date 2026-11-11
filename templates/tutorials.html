@@ -109,6 +109,38 @@
         color: #8a6100;
     }
 
+    /* Figura da pontuação por tempo */
+    .score-figure {
+        margin: 18px auto 22px;
+        max-width: 660px;
+        background: #fff;
+        border: 1px solid #e7eaf1;
+        border-radius: 14px;
+        box-shadow: 0 2px 12px rgba(19, 32, 60, 0.06);
+        padding: 14px 16px 10px;
+    }
+
+    .score-figure svg {
+        width: 100%;
+        height: auto;
+        display: block;
+    }
+
+    .score-figure figcaption {
+        margin-top: 10px;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        color: #6b7280;
+        text-align: left;
+    }
+
+    .score-formula {
+        text-align: center;
+        font-size: 1.05rem;
+        margin: 6px 0 2px;
+        color: #33415c;
+    }
+
     .guide-back {
         display: block;
         text-align: center;
@@ -174,11 +206,17 @@
                 pelo tamanho do enunciado (≈ 15 caracteres por segundo, entre 5 e 60 s) e pode ser
                 fixado pergunta a pergunta no <strong>Editor</strong>.</li>
             <li>Depois começa o <strong>tempo de resposta</strong> (contador ⏱️): por padrão é
-                proporcional ao tamanho das alternativas (≈ 10 caracteres por segundo, até 120 s)
+                proporcional ao tamanho das alternativas (≈ 3 caracteres por segundo, entre
+                <strong>10 e 120 s</strong> — o piso garante tempo para resolver contas curtas)
                 e também pode ser fixado por pergunta no <strong>Editor</strong>.</li>
-            <li><strong>Mostrar Resultados</strong> revela a alternativa correta, o gráfico de
-                distribuição das respostas e o pódio da pergunta.</li>
-            <li><strong>📋 Mostrar Pergunta Novamente</strong> reabre a pergunta para reler com a turma.</li>
+            <li><strong>Mostrar Resultados</strong> revela a alternativa correta, a distribuição das
+                respostas (com a alternativa certa em destaque, em % e em número de votos) e o
+                pódio da pergunta — ou o placar por time, no modo time.</li>
+            <li><strong>📷 Baixar imagem</strong> gera um PNG daquela tela de resultados, para
+                guardar ou compartilhar depois da aula.</li>
+            <li>A <strong>justificativa</strong> da resposta (quando você escreveu uma no
+                <strong>Editor</strong>) aparece num cartão logo abaixo do gráfico.</li>
+            <li><strong>📋 Ver pergunta</strong> reabre a pergunta para reler com a turma.</li>
             <li><strong>Próxima Pergunta</strong> avança. Depois da última, o placar final aparece
                 para todos e o resultado é gravado em um CSV.</li>
             <li><strong>Finalizar Quiz</strong> encerra a partida a qualquer momento.</li>
@@ -190,6 +228,21 @@
             <li><strong>Competição</strong> — até 200 pontos extras por acerto
                 <em>rápido</em>: quem acerta primeiro leva mais, quem erra não pontua.</li>
         </ul>
+
+        <p>O bônus de <strong>competição</strong> depende do tempo que o aluno levou para
+            responder — e só vale para quem acertou:</p>
+        <p class="score-formula">
+            \(\text{pts}(t) = \left\lfloor 200 \cdot \operatorname{sinc}^{4}\!\left(\dfrac{t}{60}\right) \right\rfloor\)
+        </p>
+
+        <figure class="score-figure">
+            {{ scoring_curve_svg | safe }}
+            <figcaption>
+                A curva começa no máximo (200 pontos para quem responde na hora), cai
+                rápido — metade por volta dos 19&nbsp;s — e chega a <strong>zero em 60&nbsp;s</strong>:
+                depois disso, acertar ainda vale 1 ponto de avaliação, mas não rende bônus.
+            </figcaption>
+        </figure>
 
         <h4>Se algo der errado</h4>
         <ul>
@@ -230,10 +283,13 @@
                 <strong>0</strong> para liberar as respostas imediatamente.</li>
             <li><strong>Tempo de resposta (s)</strong> — quanto tempo os alunos têm para
                 escolher. Deixe <em>vazio</em> para o cálculo automático pelo tamanho das
-                alternativas (≈ 10 caracteres por segundo, até 120 s).</li>
+                alternativas (≈ 3 caracteres por segundo, entre 10 e 120 s).</li>
             <li><strong>+ Adicionar Pergunta</strong> e <strong>+ Adicionar opção</strong> criam mais
                 itens (as alternativas aparecem como A, B, C, D).</li>
             <li><strong>Figura (opcional)</strong> — escolha um PNG/JPG/GIF do computador.</li>
+            <li><strong>Justificativa (opcional)</strong> — explique por que a alternativa correta é
+                essa (aceita LaTeX). Ela aparece na <strong>pré-visualização</strong> e na tela de
+                resultados do apresentador, logo abaixo da resposta correta.</li>
             <li><strong>Salvar Quiz</strong> grava tudo. Sem salvar, as mudanças são perdidas.</li>
         </ol>
 
@@ -304,10 +360,14 @@
             <li>Enquanto a sala não abre, aparece <em>"Aguardando o professor abrir a sala..."</em>.
                 Assim que ela abre, o nome da turma aparece na tela.</li>
             <li>Digite o <strong>nome cadastrado</strong> e toque em <strong>Entrar</strong>.</li>
-            <li>Se o professor ligou o <strong>modo time</strong>, escolha <strong>Time A</strong>
-                ou <strong>Time B</strong> antes de entrar — a escolha aparece na sua tela de espera.</li>
+            <li>Se o professor ligou o <strong>modo time</strong>, toque no <strong>botão verde
+                (Time A)</strong> ou no <strong>botão vermelho (Time B)</strong> antes de entrar — a
+                escolha aparece na sua tela de espera.</li>
             <li>Aguarde o professor iniciar. A cada pergunta, toque na letra da alternativa
                 (A, B, C ou D).</li>
+            <li>Depois de cada pergunta aparece a sua tabela de pontuação: a pergunta mais
+                recente fica <strong>no topo</strong> e a primeira na última linha, com o
+                <strong>total</strong> (acertos e pontos) no rodapé.</li>
             <li>Se a página recarregar, você volta para a mesma sessão, com os pontos que já tinha.</li>
             <li>Se você entrar com a partida já em andamento, aparece
                 <em>"A partida já começou! Você entra na próxima pergunta."</em> — não é erro:

@@ -5,7 +5,7 @@ const resultView = document.getElementById('result-view');
 
 const nicknameInput = document.getElementById('nickname-input');
 const nicknameDisplay = document.getElementById('nickname-display');
-const teamSelect = document.getElementById('team-select');
+const teamPicker = document.getElementById('team-picker');
 const teamDisplay = document.getElementById('team-display');
 const teamResultDisplay = document.getElementById('team-result-display');
 const optionsGrid = document.getElementById('options-grid');
@@ -14,6 +14,8 @@ const resultTextEl = document.getElementById('result-text');
 const scoreDisplayEl = document.getElementById('score-display');
 const waitMessageEl = document.getElementById('wait-message');
 const teamLineEl = document.getElementById('team-line');
+const scoreHistoryEl = document.getElementById('score-history');
+const scoreHistoryBodyEl = document.getElementById('score-history-body');
 
 const STATE_LOBBY = 0
 const STATE_QUESTION = 1
@@ -27,6 +29,8 @@ let lastAnsweredQuestionIndex = null; // stores the index of the question answer
 let mySid = null;
 let myTeam = null;
 let teamMode = false;   // o professor ligou o modo time?
+let selectedTeam = null; // 'A' ou 'B' — escolhido nos botões de time
+let currentTotalQuestions = 0;   // total de perguntas do quiz atual
 let sessionToken = localStorage.getItem('quizSessionToken');
 // Só recebe/mostra eventos de jogo depois que o servidor confirma a entrada.
 // Sem isso, quem ainda está digitando o nome via as alternativas aparecerem
@@ -47,7 +51,11 @@ function checkExistingSession() {
             if (data.valid) {
                 // Sessão válida, ocultar tela de login e aguardar reconexão
                 joinView.style.display = 'none';
-                waitView.style.display = 'block';
+                // Não sobrepõe a tela de pergunta/resultado caso o socket já
+                // tenha restaurado a sessão antes desta resposta chegar
+                const emJogo = (questionView.style.display === 'block')
+                    || (resultView.style.display === 'block');
+                if (!emJogo) waitView.style.display = 'block';
                 nicknameDisplay.textContent = data.nickname;
                 console.log('Sessão existente encontrada, aguardando reconexão...');
             } else {
@@ -85,6 +93,9 @@ function restorePlayerSession() {
 // ========== FUNÇÃO show_question MODIFICADA ==========
 function show_question(data) {
     console.log('gamestate = ' + data.state);
+    if (data && data.total_questions) {
+        currentTotalQuestions = data.total_questions;
+    }
     waitView.style.display = 'none';
     resultView.style.display = 'none';
     questionView.style.display = 'block';
@@ -159,6 +170,66 @@ function update_waiting_screen(myLastAnswerIndex, correctOptionIndex){
     }
 }
 
+// -------------------- Tabela de pontuação --------------------
+// O servidor manda a tabela pronta, com a pergunta mais recente no topo e o
+// total acumulado no fim (evento `score_history`, personalizado por aluno).
+function renderScoreHistory(data) {
+    if (!scoreHistoryEl || !scoreHistoryBodyEl) return;
+
+    const rows = (data && data.rows) || [];
+    scoreHistoryBodyEl.innerHTML = '';
+
+    if (rows.length === 0) {
+        scoreHistoryEl.style.display = 'none';
+        return;
+    }
+
+    const totalPerguntas = (data && data.total_questions)
+        || ((currentTotalQuestions > 0)
+            ? currentTotalQuestions
+            : rows.reduce((maior, row) => Math.max(maior, row.question_index + 1), 0));
+
+    rows.forEach((row) => {
+        const tr = document.createElement('tr');
+        tr.className = row.correct ? 'hit' : 'miss';
+
+        const numero = document.createElement('td');
+        numero.textContent = `Pergunta ${row.question_index + 1}/${totalPerguntas}`;
+
+        const resultado = document.createElement('td');
+        resultado.textContent = row.correct ? '✓' : (row.answered ? '✗' : '–');
+
+        const pontos = document.createElement('td');
+        pontos.textContent = row.correct ? `+${row.points}` : '0';
+
+        tr.appendChild(numero);
+        tr.appendChild(resultado);
+        tr.appendChild(pontos);
+        scoreHistoryBodyEl.appendChild(tr);
+    });
+
+    // Linha do agregado, sempre por último
+    const total = document.createElement('tr');
+    total.className = 'total';
+    const rotulo = document.createElement('td');
+    rotulo.textContent = 'Total';
+    const acertos = document.createElement('td');
+    acertos.textContent = `${data.total_correct || 0} acerto${(data.total_correct === 1) ? '' : 's'}`;
+    const soma = document.createElement('td');
+    soma.textContent = `${data.total_points || 0} pts`;
+    total.appendChild(rotulo);
+    total.appendChild(acertos);
+    total.appendChild(soma);
+    scoreHistoryBodyEl.appendChild(total);
+
+    scoreHistoryEl.style.display = 'block';
+}
+
+socket.on('score_history', (data) => {
+    if (!joined) return;
+    renderScoreHistory(data);
+});
+
 
 // Entrar no Jogo
 const joinBtn = document.getElementById('join-btn'); // Pega o botão
@@ -169,10 +240,10 @@ joinBtn.addEventListener('click', () => {
     // No modo time, o aluno precisa escolher onde vai competir
     let team = null;
     if (teamMode) {
-        team = teamSelect ? teamSelect.value : '';
+        team = selectedTeam;
         if (!team) {
             alert('Escolha o seu time (Time A ou Time B) para entrar!');
-            if (teamSelect) teamSelect.focus();
+            if (teamPicker) teamPicker.scrollIntoView({ block: 'center' });
             return;
         }
     }
@@ -194,22 +265,36 @@ const roomInfoEl = document.getElementById('room-info');
 const roomClassNameEl = document.getElementById('room-class-name');
 const roomClosedEl = document.getElementById('room-closed');
 
-// Preenche o seletor de times com os nomes que o servidor informou
+// Marca o time escolhido (visual + estado)
+function selectTeam(key) {
+    selectedTeam = key;
+    if (!teamPicker) return;
+    Array.prototype.forEach.call(teamPicker.querySelectorAll('.team-choice'), (btn) => {
+        const ativo = btn.dataset.team === key;
+        btn.classList.toggle('selected', ativo);
+        btn.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+    });
+}
+
+// Monta os dois botões de time com os nomes que o servidor informou
 function renderTeamOptions(teams) {
-    if (!teamSelect) return;
-    const selecionado = teamSelect.value;
+    if (!teamPicker) return;
     const mapa = teams || { A: 'Time A', B: 'Time B' };
 
-    teamSelect.innerHTML = '<option value="">Selecione seu time</option>';
+    teamPicker.innerHTML = '';
     Object.keys(mapa).forEach((key) => {
-        const opt = document.createElement('option');
-        opt.value = key;
-        opt.textContent = mapa[key];
-        teamSelect.appendChild(opt);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'team-choice team-' + key.toLowerCase() +
+            (selectedTeam === key ? ' selected' : '');
+        btn.dataset.team = key;
+        btn.textContent = mapa[key];
+        btn.setAttribute('aria-pressed', selectedTeam === key ? 'true' : 'false');
+        btn.addEventListener('click', () => selectTeam(key));
+        teamPicker.appendChild(btn);
     });
 
-    if (selecionado) teamSelect.value = selecionado;
-    teamSelect.style.display = teamMode ? 'block' : 'none';
+    teamPicker.style.display = teamMode ? 'flex' : 'none';
 }
 
 function showMyTeam(teamName) {
@@ -256,7 +341,9 @@ socket.on('room_closed', (data) => {
     nicknameDisplay.textContent = '';
     nicknameInput.value = '';
     showMyTeam(null);
-    if (teamSelect) teamSelect.style.display = teamMode ? 'block' : 'none';
+    renderScoreHistory(null);
+    selectedTeam = null;
+    renderTeamOptions(null);
 
     questionView.style.display = 'none';
     resultView.style.display = 'none';
@@ -279,6 +366,10 @@ socket.on('join_success', (data) => {
     waitView.style.display = 'block';
     nicknameDisplay.textContent = data.nickname;
     showMyTeam(data.team_name);
+    if (data.team) selectTeam(data.team);
+
+    // Tabela de pontuação (vem pronta do servidor, quando existir)
+    renderScoreHistory(data.score_history);
 
     // O aluno pode ter entrado com o jogo já em andamento: avisa em vez de
     // jogar as alternativas na tela dele.
@@ -306,6 +397,8 @@ joinView.style.display = 'none';
 waitView.style.display = 'block';
 nicknameDisplay.textContent = data.nickname;
 showMyTeam(data.team_name);
+if (data.team) selectTeam(data.team);
+renderScoreHistory(data.score_history);
 allow_answer = data.allow_answer;
 
 
@@ -426,6 +519,7 @@ socket.on('game_restarted', () => {
     resultView.style.display = 'none';
     joinView.style.display = 'none';
     waitView.style.display = 'block';
+    renderScoreHistory(null);
     if (waitMessageEl) {
         waitMessageEl.textContent = 'Aguarde o professor iniciar o jogo...';
     }

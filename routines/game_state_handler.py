@@ -34,6 +34,9 @@ def clear_game_state():
         'team_mode': constants.TEAM_MODE_DEFAULT,  # modo time ligado?
         'teams': {},            # {sid: 'A'/'B'} — time de cada aluno
         'final_teams': [],      # placar por time da última partida
+        'last_results': None,   # payload da última tela de resultados
+        'history': [],          # resultado de cada pergunta (tabela do aluno)
+        'total_questions': 0,   # quantas perguntas tem o quiz da partida
         'PLAYER_SESSIONS': {}
     }
     return game_state
@@ -98,6 +101,9 @@ def save_full_state(game_state, QUIZ_DATA, force=True):
             'team_mode': game_state.get('team_mode', False),
             'teams': game_state.get('teams', {}),
             'final_teams': game_state.get('final_teams', []),
+            'last_results': game_state.get('last_results'),
+            'history': game_state.get('history', []),
+            'total_questions': game_state.get('total_questions', 0),
             'PLAYER_SESSIONS': game_state['PLAYER_SESSIONS']
         },
         'quiz_data': QUIZ_DATA  # current quiz being played

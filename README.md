@@ -127,10 +127,15 @@ sala, e o aluno **não precisa escolher turma** — ele só digita o nome.
    **Modo time (Time A × Time B)** — veja abaixo.)
 3. Os alunos apontam a câmera do celular para o QR code (ou digitam o endereço),
    veem a turma na tela e digitam o nome cadastrado. Cada um que entra aparece
-   na lista do apresentador.
+   na lista do apresentador. Depois de cada pergunta, o celular do aluno mostra
+   a **tabela de pontuação** dele: a pergunta mais recente no topo, a primeira
+   na última linha e o **total** (acertos e pontos) no rodapé.
 4. Clique em **Iniciar Jogo**. A cada pergunta, o apresentador vê quantos já
    responderam e clica em **Mostrar Resultados** para revelar a resposta certa,
-   o gráfico e o pódio.
+   a distribuição das respostas e o pódio da pergunta (ou o placar por time).
+   A tela de resultados é desenhada no próprio navegador — com a alternativa
+   correta destacada, percentuais e votos — e o botão **📷 Baixar imagem**
+   gera um PNG daquele resultado quando você quiser guardar ou compartilhar.
 5. Clique em **Próxima Pergunta** para seguir. No fim, o placar aparece para
    todos.
 
@@ -140,7 +145,9 @@ Esse tempo pode ser fixado pergunta a pergunta no *Editor*; sem valor definido,
 ele é calculado pelo tamanho do enunciado (≈ 15 caracteres por segundo, entre
 5 e 60 s). Depois da leitura começa a **fase de resposta** (contador ⏱️), também
 configurável por pergunta: sem valor definido, o tempo é proporcional ao tamanho
-das alternativas (≈ 10 caracteres por segundo, até 120 s).
+das alternativas (≈ 3 caracteres por segundo, entre **10 e 120 s** — o piso de
+10 s garante tempo para resolver contas com alternativas curtas). Os dois
+valores ficam em `routines/constants.py` (`READING_*` e `ANSWER_*`).
 
 ### Fluxo de estados da partida
 
@@ -273,9 +280,12 @@ interface — não é preciso mexer em arquivos.
   liberar as respostas imediatamente.
 - **Tempo de resposta (s)** — por pergunta: quanto tempo os alunos têm para
   escolher. Deixe **vazio** para o cálculo automático pelo tamanho das
-  alternativas (≈ 10 caracteres por segundo, máximo 120 s), ou fixe um valor.
+  alternativas (≈ 3 caracteres por segundo, entre 10 e 120 s), ou fixe um valor.
 - **Figura (opcional)** — escolha uma imagem do computador; ela aparece na
   pergunta para os alunos.
+- **Justificativa (opcional)** — a explicação da resposta certa (aceita LaTeX).
+  Aparece só para você, na tela de resultados da pergunta, e fica também na
+  pré-visualização do editor. Deixar vazio = a pergunta não mostra justificativa.
 - **Salvar Quiz** — grave o quiz. Sem salvar, as mudanças são perdidas.
 
 Os quizzes ficam na pasta da turma (`static/quizzes/<turma>/`), por isso a mesma
@@ -344,12 +354,20 @@ Cada jogador acumula **duas notas** ao mesmo tempo:
 - **Competição** — pontos extras por acerto **rápido**: acertar primeiro vale
   mais (até 200 pontos por pergunta). Quem erra não pontua.
 
+O bônus de competição cai com o tempo de resposta segundo
+$\text{pts}(t) = \left\lfloor 200 \cdot \operatorname{sinc}^{4}(t/60) \right\rfloor$:
+começa no máximo, cai pela metade por volta dos 19 s e **zera em 60 s**. A curva
+está desenhada no [guia do apresentador](http://localhost:5000/guia#apresentador).
+
 Em cada pergunta, clique em **Mostrar Resultados** para revelar:
 
 - a alternativa correta;
-- um gráfico com a **distribuição das respostas** e o **pódio** (os 3 melhores
-  da pergunta);
-- o botão **📋 Mostrar Pergunta Novamente**, para reler a pergunta com a turma.
+- a **distribuição das respostas** (com a alternativa certa em destaque, em %
+  e em votos) e o **pódio** da pergunta — ou o **placar por time**, no modo time;
+- a **justificativa** da resposta, quando você escreveu uma no campo
+  *Justificativa* da pergunta;
+- os botões **📋 Ver pergunta** (reler com a turma) e **📷 Baixar imagem**
+  (gera um PNG daquele resultado para guardar ou compartilhar).
 
 No fim do quiz — ou ao clicar em **Finalizar Quiz** — todos veem o placar final,
 e um arquivo CSV com as notas é gravado automaticamente na pasta `scores/`,

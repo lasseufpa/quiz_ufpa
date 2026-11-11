@@ -208,6 +208,8 @@ def reset_for_new_match(game_state, quiz_data):
     game_state['state'] = constants.STATE_LOBBY
     game_state['final_leaderboard'] = []
     game_state['final_teams'] = []
+    game_state['last_results'] = None
+    game_state['history'] = []
     game_state['question_start_time'] = None
     game_state['reading_duration'] = None
     game_state['reading_started_at'] = None
@@ -237,9 +239,10 @@ def answer_seconds_for(question):
 
     Prioridade:
       1. `answer_time` definido na pergunta (0 = encerra na hora);
-      2. cálculo automático pelo tamanho das ALTERNATIVAS — sem tempo mínimo,
-         apenas com teto (ANSWER_MAX_DURATION). Alternativas longas dão mais
-         tempo; alternativas curtas dão pouco.
+      2. cálculo automático pelo tamanho das ALTERNATIVAS — com piso
+         (ANSWER_MIN_DURATION) e teto (ANSWER_MAX_DURATION). Alternativas
+         longas dão mais tempo; alternativas curtas ainda precisam de tempo
+         para o aluno resolver a conta.
     """
     if not isinstance(question, dict):
         return constants.QUESTION_DURATION
@@ -259,7 +262,8 @@ def answer_seconds_for(question):
         return constants.QUESTION_DURATION
 
     seconds = int(math.ceil(chars / constants.ANSWER_CHARS_PER_SECOND))
-    return min(seconds, constants.ANSWER_MAX_DURATION)
+    return max(constants.ANSWER_MIN_DURATION,
+               min(seconds, constants.ANSWER_MAX_DURATION))
 
 
 def reading_seconds_for(question):
@@ -423,8 +427,9 @@ def _score_answers(game_state, correct_option_index):
     """
     Atualiza as duas pontuações:
       - Avaliação: 1 ponto por resposta correta.
-      - Competição: bônus por rapidez, int(200 * sinc(t/60)**4), máx. 200.
-    Retorna {nickname: pontos de competição desta questão}.
+      - Competição: bônus por rapidez, até COMPETITION_MAX_POINTS, que zera em
+        COMPETITION_HALF_WINDOW segundos (a curva está em routines/figures.py).
+    Retorna {sid: pontos de competição desta questão}.
     """
     # Avaliação
     for sid, answer in game_state['answers'].items():
@@ -441,21 +446,148 @@ def _score_answers(game_state, correct_option_index):
             if int(answer) == int(correct_option_index):
                 t = game_state['answers_time'].get(sid)
                 if t is not None and t >= 0:
-                    comp_points = int(200 * _sinc(t / 60) ** 4)
+                    comp_points = int(
+                        constants.COMPETITION_MAX_POINTS
+                        * _sinc(t / constants.COMPETITION_HALF_WINDOW)
+                        ** constants.COMPETITION_EXPONENT
+                    )
                 else:
                     comp_points = 0
                 game_state['competition_scores'][sid] = (
                     game_state['competition_scores'].get(sid, 0) + comp_points
                 )
-                question_competition_points[game_state['players'][sid]] = comp_points
+                question_competition_points[sid] = comp_points
         except Exception:
             pass
 
     return question_competition_points
 
 
+def _podium(question_competition_points, game_state):
+    """Top 3 da pergunta (nickname, pontos) para o card do apresentador."""
+    players = game_state.get('players', {})
+    itens = [
+        (players.get(sid, '?'), pts)
+        for sid, pts in question_competition_points.items()
+    ]
+    itens.sort(key=lambda item: item[1], reverse=True)
+    return itens[:3]
+
+
+# -------------------- Histórico do aluno --------------------
+def _record_history_entry(game_state, correct_option_index, points_by_sid):
+    """Guarda o resultado desta pergunta para cada aluno (tabela do celular)."""
+    answers = game_state.get('answers') or {}
+    entry = {
+        'index': game_state.get('current_question', -1),
+        'players': {},
+    }
+    for sid in game_state.get('players', {}):
+        answer = answers.get(sid)
+        try:
+            correct = answer is not None and int(answer) == int(correct_option_index)
+        except (TypeError, ValueError):
+            correct = False
+        entry['players'][sid] = {
+            'answered': answer is not None,
+            'correct': correct,
+            'points': int(points_by_sid.get(sid, 0)),
+        }
+
+    game_state.setdefault('history', []).append(entry)
+    return entry
+
+
+def player_score_history(game_state, sid):
+    """Linhas da tabela de pontuação de um aluno (mais recente primeiro).
+
+    Cada linha: {'question_index', 'answered', 'correct', 'points'}.
+    Inclui também os totais acumulados (pontos de competição e acertos).
+    """
+    rows = []
+    for entry in game_state.get('history') or []:
+        info = (entry.get('players') or {}).get(sid)
+        if not info:
+            continue
+        rows.append({
+            'question_index': entry.get('index', -1),
+            'answered': bool(info.get('answered')),
+            'correct': bool(info.get('correct')),
+            'points': int(info.get('points', 0)),
+        })
+
+    # Mais recente no topo, primeira pergunta na última linha
+    rows.sort(key=lambda row: row['question_index'], reverse=True)
+
+    return {
+        'rows': rows,
+        'total_points': int(game_state['competition_scores'].get(sid, 0)),
+        'total_correct': int(game_state['scores'].get(sid, 0)),
+        'total_questions': int(game_state.get('total_questions') or 0),
+    }
+
+
+def emit_player_score_history(game_state, sid):
+    """Envia a tabela de pontuação só para um aluno (evento personalizado)."""
+    emit('score_history', player_score_history(game_state, sid), to=sid)
+
+
+def remap_player_history(game_state, old_sid, new_sid):
+    """Move o histórico do aluno para o novo SID (reconexão/reassumir lugar)."""
+    for entry in game_state.get('history') or []:
+        players = entry.get('players') or {}
+        if old_sid in players:
+            players[new_sid] = players.pop(old_sid)
+
+
+def build_results_payload(game_state, quiz_data, podium=None):
+    """Dados da tela de resultados de uma pergunta (sem desenhar nada).
+
+    O apresentador monta o gráfico no próprio navegador; a imagem (PNG) só é
+    gerada quando alguém pede para exportar (`export_results_image`).
+    """
+    q_index = game_state.get('current_question', -1)
+    if q_index < 0 or q_index >= len(quiz_data['questions']):
+        return None
+
+    question_data = quiz_data['questions'][q_index]
+    options = question_data.get('options') or []
+    correct_option_index = int(question_data.get('correct_option', 0))
+
+    answer_distribution = [0] * len(options)
+    for ans in (game_state.get('answers') or {}).values():
+        try:
+            answer_distribution[int(ans)] += 1
+        except (ValueError, TypeError, IndexError):
+            pass
+
+    correct_text = options[correct_option_index] if correct_option_index < len(options) else ''
+    team_mode = bool(game_state.get('team_mode'))
+
+    return {
+        'question_index': q_index,
+        'total_questions': len(quiz_data['questions']),
+        'question_text': question_data.get('text', ''),
+        'options': options,
+        'correct_option': correct_option_index,
+        'correct_option_text': chr(ord('A') + correct_option_index) + ') ' + correct_text,
+        'explanation': (question_data.get('explanation') or '').strip(),
+        'answer_distribution': answer_distribution,
+        'answers_total': sum(answer_distribution),
+        'players_online': game_handler.online_count(game_state),
+        'scores': game_state['scores'],
+        'players': game_state['players'],
+        'podium': [
+            {'nickname': nickname, 'score': score}
+            for nickname, score in (podium or [])
+        ],
+        'team_mode': team_mode,
+        'teams': build_team_standings(game_state) if team_mode else [],
+    }
+
+
 def show_results(game_state, quiz_data):
-    """Calcula as pontuações, gera o gráfico (distribuição + pódio) e revela os resultados."""
+    """Calcula as pontuações e revela os resultados (renderizados no cliente)."""
     if request.sid != game_state['host_sid']:
         return
     # Idempotência: clique duplo não pode somar a pontuação duas vezes
@@ -466,45 +598,70 @@ def show_results(game_state, quiz_data):
     if q_index < 0 or q_index >= len(quiz_data['questions']):
         return
     question_data = quiz_data['questions'][q_index]
-    correct_option_index = question_data['correct_option']
-    correct_option_text = question_data['options'][correct_option_index]
+    correct_index = int(question_data['correct_option'])
 
-    answer_distribution = [0] * len(question_data['options'])
-    for ans in game_state['answers'].values():
-        try:
-            answer_distribution[int(ans)] += 1
-        except (ValueError, TypeError, IndexError):
-            pass
+    points_by_sid = _score_answers(game_state, correct_index)
 
-    question_competition_points = _score_answers(game_state, correct_option_index)
+    # Top 3 desta questão (pódio mostrado pelo apresentador)
+    top3 = _podium(points_by_sid, game_state)
 
-    # Top 3 desta questão (pódio do gráfico)
-    top3 = sorted(question_competition_points.items(), key=lambda x: x[1], reverse=True)[:3]
+    # Guarda o resultado da pergunta para a tabela do celular de cada aluno
+    _record_history_entry(game_state, correct_index, points_by_sid)
 
-    team_mode = bool(game_state.get('team_mode'))
-    team_standings = build_team_standings(game_state) if team_mode else []
+    payload = build_results_payload(game_state, quiz_data, podium=top3)
+    if payload is None:
+        return
 
-    combined_chart_path = chart.save_combined_results_chart(
-        answer_distribution, question_data, q_index, top3,
-        team_standings=team_standings,
-    )
+    # Guarda para o F5 (o apresentador volta na mesma tela) e para a exportação
+    game_state['last_results'] = payload
 
-    payload = {
-        'correct_option': correct_option_index,
-        'correct_option_text': chr(ord('A') + correct_option_index) + ') ' + correct_option_text,
-        'scores': game_state['scores'],
-        'players': game_state['players'],
-        'answer_distribution': answer_distribution,
-        'chart_path': combined_chart_path,
-        'team_mode': team_mode,
-        'teams': team_standings,
-    }
     emit('show_results', payload, to=constants.GAME_ROOM)
-    log.info("Mostrando resultados com gráfico combinado.")
+
+    # Tabela de pontuação de cada aluno (personalizada, com o total acumulado)
+    for sid in list(game_state['players'].keys()):
+        emit_player_score_history(game_state, sid)
+
+    log.info("Mostrando resultados da pergunta %d.", q_index + 1)
     game_state['state'] = constants.STATE_ANSWER
     # Invalida o timer de leitura pendente, se ainda houver
     game_state['question_token'] = game_state.get('question_token', 0) + 1
     game_handler.save_full_state(game_state, quiz_data)
+
+
+def export_results_image(game_state, quiz_data):
+    """Gera o PNG dos resultados (mesmo desenho usado antes na tela).
+
+    Chamado apenas quando o apresentador clica em "Baixar imagem": a partida
+    não fica esperando o matplotlib.
+    """
+    if request.sid != game_state['host_sid']:
+        return
+    payload = game_state.get('last_results') or build_results_payload(game_state, quiz_data)
+    if not payload:
+        emit('admin_error', {'message': 'Não há resultados para exportar agora.'},
+             to=request.sid)
+        return
+
+    q_index = payload['question_index']
+    question_data = quiz_data['questions'][q_index]
+    podium = [(item['nickname'], item['score']) for item in payload.get('podium') or []]
+
+    try:
+        path = chart.save_combined_results_chart(
+            payload['answer_distribution'], question_data, q_index, podium,
+            team_standings=payload.get('teams') or None,
+        )
+    except Exception as e:  # não derruba a partida por causa de um gráfico
+        log.error("Falha ao gerar a imagem dos resultados: %s", e)
+        emit('admin_error', {'message': 'Não foi possível gerar a imagem dos resultados.'},
+             to=request.sid)
+        return
+
+    emit('results_image_ready', {
+        'path': path,
+        'filename': f"resultados_pergunta_{q_index + 1}.png",
+    }, to=request.sid)
+    log.info("Imagem dos resultados exportada: %s", path)
 
 
 def force_end_quiz(game_state, quiz_data):

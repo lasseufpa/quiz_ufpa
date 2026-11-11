@@ -138,10 +138,267 @@
         border-radius: 12px;
     }
 
-    #results-chart {
-        width: 100%;
-        max-width: 760px;
-        height: auto;
+    /* --- Tela de resultados (desenhada no navegador) --- */
+    #results-view {
+        max-width: 1040px;
+        margin: 0 auto;
+    }
+
+    .results-head {
+        margin-bottom: 18px;
+    }
+
+    .results-step {
+        margin: 0 0 4px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #7b8494;
+    }
+
+    .results-question {
+        margin: 0;
+        font-size: 1.3rem;
+        line-height: 1.35;
+        color: #2b3242;
+        overflow-wrap: anywhere;
+    }
+
+    .results-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+        gap: 16px;
+        align-items: start;
+    }
+
+    .results-side {
+        display: grid;
+        gap: 16px;
+    }
+
+    .results-card {
+        background: #fff;
+        border: 1px solid #e7eaf1;
+        border-radius: 16px;
+        box-shadow: 0 2px 12px rgba(19, 32, 60, 0.06);
+        padding: 16px 18px;
+        text-align: left;
+    }
+
+    .results-card h4 {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 10px;
+        margin: 0 0 14px;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #7b8494;
+    }
+
+    .results-total {
+        font-size: 0.74rem;
+        font-weight: 600;
+        letter-spacing: 0;
+        text-transform: none;
+        color: #9aa3b2;
+        white-space: nowrap;
+    }
+
+    .results-bars {
+        display: grid;
+        gap: 12px;
+    }
+
+    .answer-row {
+        display: grid;
+        /* Coluna do valor com largura fixa: se ela crescer com o texto
+           ("44% · 4 ✓"), a trilha encurta e a barra da correta fica menor. */
+        grid-template-columns: 30px minmax(0, 1fr) 88px;
+        gap: 4px 12px;
+        align-items: center;
+    }
+
+    .answer-letter {
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+        font-size: 0.9rem;
+        background: #eef1f6;
+        color: #4b5565;
+    }
+
+    .answer-row.correct .answer-letter {
+        background: #d9f2e0;
+        color: #17703a;
+    }
+
+    .answer-track {
+        height: 26px;
+        background: #f1f3f7;
+        border-radius: 999px;
+        overflow: hidden;
+    }
+
+    .answer-fill {
+        height: 100%;
+        width: 0;
+        border-radius: 999px;
+        background: #c9d0dc;
+        transition: width 0.55s cubic-bezier(0.22, 0.61, 0.36, 1);
+    }
+
+    .answer-row.correct .answer-fill {
+        background: linear-gradient(90deg, #2fbf71, #1f9d59);
+    }
+
+    .answer-value {
+        font-weight: 700;
+        font-size: 0.88rem;
+        color: #4b5565;
+        white-space: nowrap;
+        text-align: right;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .answer-row.correct .answer-value {
+        color: #17703a;
+    }
+
+    .answer-text {
+        grid-column: 2 / 4;
+        margin: -2px 0 0;
+        font-size: 0.82rem;
+        line-height: 1.3;
+        color: #6b7280;
+        max-height: 2.6em;
+        overflow: hidden;
+    }
+
+    .results-empty {
+        margin: 0;
+        color: #8a93a3;
+        font-style: italic;
+    }
+
+    .correct-answer {
+        margin: 0;
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #1f2937;
+        overflow-wrap: anywhere;
+    }
+
+    .results-explanation {
+        margin-top: 16px;
+        border-left: 4px solid #3b4cca;
+    }
+
+    .results-explanation-text {
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.55;
+        color: #33415c;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    .results-standings {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 8px;
+    }
+
+    .results-standings li {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        background: #f7f9fc;
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #3c4658;
+    }
+
+    .results-standings li.is-winner {
+        background: #fff6dd;
+        color: #6b4e00;
+    }
+
+    .results-standings li.is-team {
+        background: #eef2ff;
+        color: #2f3fa8;
+        font-weight: 700;
+    }
+
+    .results-standings li.is-member {
+        background: #f7f9fc;
+        font-weight: 500;
+        padding-left: 26px;
+    }
+
+    .results-standings .muted {
+        color: #8a93a3;
+        font-style: italic;
+        font-weight: 500;
+    }
+
+    .results-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        align-items: center;
+        gap: 10px;
+        margin-top: 22px;
+    }
+
+    .results-actions-main {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .results-finish {
+        margin-left: auto;
+        background: #fff;
+        color: #b02a37;
+        border: 1px solid #f3c7cc;
+        box-shadow: none;
+    }
+
+    .results-finish:hover:not(:disabled) {
+        background: #fdf2f3;
+        box-shadow: none;
+        transform: none;
+    }
+
+    @media (max-width: 480px) {
+        .answer-row {
+            grid-template-columns: 26px minmax(0, 1fr) 76px;
+        }
+    }
+
+    @media (max-width: 820px) {
+        .results-grid {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .results-actions {
+            justify-content: center;
+        }
+
+        .results-finish {
+            margin-left: 0;
+        }
     }
 
     .change-selection {
@@ -368,11 +625,50 @@
 </div>
 
 <div id="results-view" style="display: none;">
-    <h3>Distribuição das respostas</h3>
-    <img id="results-chart" src="" alt="Gráfico das respostas" style="max-width: 760px;">
-    <p>A resposta correta era: <strong id="correct-answer-text"></strong></p>
-    <button id="next-question-btn">Próxima Pergunta</button>
-    <button id="force-end-results-btn" style="background-color: #dc3545; margin-left: 10px;">Finalizar Quiz</button>
+    <header class="results-head">
+        <p class="results-step" id="results-step">Pergunta 1 de 1</p>
+        <h3 class="results-question" id="results-question"></h3>
+    </header>
+
+    <div class="results-grid">
+        <section class="results-card">
+            <h4>
+                <span>Distribuição das respostas</span>
+                <span class="results-total" id="results-total"></span>
+            </h4>
+            <div id="results-bars" class="results-bars"></div>
+            <p id="results-empty" class="results-empty" style="display: none;">
+                Ninguém respondeu esta pergunta.
+            </p>
+        </section>
+
+        <div class="results-side">
+            <section class="results-card">
+                <h4><span>Resposta correta</span></h4>
+                <p id="correct-answer-text" class="correct-answer"></p>
+            </section>
+
+            <section class="results-card">
+                <h4><span id="results-standings-title">Pódio da pergunta</span></h4>
+                <ol id="results-standings" class="results-standings"></ol>
+            </section>
+        </div>
+    </div>
+
+    <section class="results-card results-explanation" id="results-explanation-card" style="display: none;">
+        <h4><span>Justificativa</span></h4>
+        <p id="results-explanation" class="results-explanation-text"></p>
+    </section>
+
+    <div class="results-actions">
+        <div class="results-actions-main">
+            <button id="next-question-btn" class="btn btn-primary">Próxima Pergunta →</button>
+            <button id="show-question-again-btn" class="btn btn-secondary">📋 Ver pergunta</button>
+            <button id="download-results-btn" class="btn btn-secondary">📷 Baixar imagem</button>
+        </div>
+        <button id="force-end-results-btn" class="btn results-finish">Finalizar Quiz</button>
+    </div>
+
     <!-- Modal (hidden by default) -->
     <div id="question-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
         <div style="background: white; max-width: 80%; max-height: 80%; overflow: auto; padding: 20px; border-radius: 10px; text-align: center;">
@@ -383,7 +679,6 @@
             <button id="close-modal-btn" style="margin-top: 15px;">Fechar</button>
         </div>
     </div>
-    <button id="show-question-again-btn" style="margin-left: 10px;">📋 Mostrar Pergunta Novamente</button>
 </div>
 
 

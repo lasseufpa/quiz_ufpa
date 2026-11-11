@@ -11,7 +11,10 @@ QUESTION_DURATION = 30
 # --- Fase de resposta (tempo para escolher a alternativa) ---
 # Cada pergunta pode definir o seu tempo em `answer_time` (segundos).
 # Sem esse valor, o tempo é proporcional ao tamanho das alternativas.
-ANSWER_CHARS_PER_SECOND = 10    # velocidade usada no cálculo automático
+ANSWER_CHARS_PER_SECOND = 3     # velocidade usada no cálculo automático
+# Piso do cálculo automático: alternativas curtas (só números, "56 / 54 / 48") 
+# não podem dar 2 s de resposta — o aluno ainda precisa resolver a conta.
+ANSWER_MIN_DURATION = 10        # piso do cálculo automático (s)
 ANSWER_MAX_DURATION = 120       # teto do cálculo automático (s)
 ANSWER_MAX_EXPLICIT = 300       # teto para o valor definido no editor (s)
 
@@ -37,3 +40,12 @@ TEAM_MODE_DEFAULT = False
 TEAM_KEYS = ('A', 'B')
 TEAM_NAMES = {'A': 'Time A', 'B': 'Time B'}
 TEAM_TOP_N = 2          # quantos jogadores de cada time aparecem nos resultados
+
+# --- Pontuação de competição (bônus por rapidez) ---
+# pts(t) = floor(COMPETITION_MAX_POINTS * sinc(t / COMPETITION_HALF_WINDOW) ^ EXP)
+# com sinc(x) = sin(pi x) / (pi x). Vale o máximo em t = 0 e zera em 60 s.
+# O guia do apresentador desenha essa curva a partir destes valores
+# (ver routines/figures.py).
+COMPETITION_MAX_POINTS = 200
+COMPETITION_HALF_WINDOW = 60
+COMPETITION_EXPONENT = 4

@@ -96,6 +96,9 @@ def on_restore_session(data):
             if old_sid in game_state.get('teams', {}):
                 game_state['teams'][new_sid] = game_state['teams'].pop(old_sid)
 
+            # Leva a tabela de pontuação das perguntas já respondidas
+            game_logic.remap_player_history(game_state, old_sid, new_sid)
+
             # Atualiza o token com o novo SID
             game_state['PLAYER_SESSIONS'][token]['sid'] = new_sid
 
@@ -122,6 +125,8 @@ def on_restore_session(data):
                 'allow_answer': allow_answer,
                 'team': player_team,
                 'team_name': constants.TEAM_NAMES.get(player_team),
+                # Tabela de pontuação das perguntas já respondidas
+                'score_history': game_logic.player_score_history(game_state, new_sid),
             }, to=new_sid)
 
             # Atualiza o host (lista e contagem)
@@ -204,6 +209,8 @@ def on_player_join(data):
         previous_team = game_state.setdefault('teams', {}).pop(existing_sid, None)
         if previous_team and team is None:
             team = previous_team
+        # Leva a tabela de pontuação para o novo SID
+        game_logic.remap_player_history(game_state, existing_sid, request.sid)
         # Tokens antigos daquele SID deixam de valer
         for old_token in [t for t, s in game_state['PLAYER_SESSIONS'].items()
                           if s['sid'] == existing_sid]:
@@ -249,6 +256,7 @@ def on_player_join(data):
         'players': len(game_state['players']),
         'team': team,
         'team_name': constants.TEAM_NAMES.get(team),
+        'score_history': game_logic.player_score_history(game_state, request.sid),
     }, to=request.sid)
     persistence.save_full_state(game_state, runtime.quiz_data)
 

@@ -4,6 +4,7 @@ import os
 
 from flask import jsonify, redirect, render_template, request, session, url_for
 
+from routines import constants, figures
 from routines import runtime
 from routines.network import get_local_ip
 
@@ -37,12 +38,29 @@ def check_session():
 
 def editor_view():
     """Página de gerenciamento de quizzes."""
-    return render_template('editor.html')
+    return render_template(
+        'editor.html',
+        # Valores reais dos tempos automáticos, usados nas dicas dos campos
+        quiz_timing={
+            'reading_chars_per_second': constants.READING_CHARS_PER_SECOND,
+            'reading_min_duration': constants.READING_MIN_DURATION,
+            'reading_max_duration': constants.READING_MAX_DURATION,
+            'reading_max_explicit': constants.READING_MAX_EXPLICIT,
+            'answer_chars_per_second': constants.ANSWER_CHARS_PER_SECOND,
+            'answer_min_duration': constants.ANSWER_MIN_DURATION,
+            'answer_max_duration': constants.ANSWER_MAX_DURATION,
+            'answer_max_explicit': constants.ANSWER_MAX_EXPLICIT,
+        },
+    )
 
 
 def tutorial():
     """Guias de uso: apresentador, editor, administrador e aluno."""
-    return render_template('tutorials.html')
+    return render_template(
+        'tutorials.html',
+        # Curva do bônus por rapidez, desenhada a partir das constantes do jogo
+        scoring_curve_svg=figures.scoring_curve_svg(),
+    )
 
 
 def register(app):

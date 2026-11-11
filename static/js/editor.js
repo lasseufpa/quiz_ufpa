@@ -2,6 +2,24 @@ let currentClass = "";    // slug da turma aberta no editor
 let currentQuizName = "";   // empty string means new quiz
 let quizData = { title: "", questions: [] };
 
+// Tempos automáticos configurados no servidor (fallback = valores padrão).
+// Vêm de routines/constants.py via template, então as dicas nunca ficam velhas.
+const TIMING = window.QUIZ_TIMING || {
+    readingCharsPerSecond: 15,
+    readingMinDuration: 10,
+    readingMaxDuration: 60,
+    answerCharsPerSecond: 3,
+    answerMinDuration: 10,
+    answerMaxDuration: 120
+};
+
+const READING_HINT = `vazio = automático pelo tamanho do enunciado ` +
+    `(≈${TIMING.readingCharsPerSecond} caracteres/s, entre ${TIMING.readingMinDuration} e ` +
+    `${TIMING.readingMaxDuration} s; 0 libera na hora)`;
+const ANSWER_HINT = `vazio = automático pelo tamanho das alternativas ` +
+    `(≈${TIMING.answerCharsPerSecond} caracteres/s, entre ${TIMING.answerMinDuration} e ` +
+    `${TIMING.answerMaxDuration} s)`;
+
 const classSelect = document.getElementById('class-select');
 const quizSelect = document.getElementById('quiz-select');
 const quizTitleInput = document.getElementById('quiz-title');
@@ -102,7 +120,7 @@ function renderQuestions() {
             <input type="number" id="reading-${idx}" class="reading-time" data-idx="${idx}"
                    min="0" max="300" step="1" placeholder="auto"
                    value="${q.reading_time == null ? '' : q.reading_time}">
-            <small class="reading-hint">vazio = automático pelo tamanho do enunciado (≈15 caracteres/s; 0 libera na hora)</small>
+            <small class="reading-hint">${READING_HINT}</small>
         </div>
 
         <div class="reading-row">
@@ -110,12 +128,18 @@ function renderQuestions() {
             <input type="number" id="answer-${idx}" class="answer-time" data-idx="${idx}"
                    min="0" max="300" step="1" placeholder="auto"
                    value="${q.answer_time == null ? '' : q.answer_time}">
-            <small class="reading-hint">vazio = automático pelo tamanho das alternativas (≈10 caracteres/s, máx. 120 s)</small>
+            <small class="reading-hint">${ANSWER_HINT}</small>
         </div>
 
         <label>Opções (selecione a correta):</label>
         <ul class="options-list" id="options-list-${idx}"></ul>
-        
+
+        <label for="explanation-${idx}">Justificativa (opcional):</label>
+        <textarea id="explanation-${idx}" class="explanation-text" rows="2"
+                  placeholder="Por que a resposta correta é essa? Aceita LaTeX ($...$)."
+                  style="width:100%; margin-bottom:6px;">${escapeHtml(q.explanation || '')}</textarea>
+        <small class="reading-hint">aparece na tela de resultados do apresentador, depois da resposta</small>
+
         <label>Figura (opcional):</label>
         <div class="figure-row">
             <input type="file" class="figure-upload" accept="image/*" data-qidx="${idx}">
@@ -220,6 +244,19 @@ function bindQuestionEvents(qDiv, qIdx) {
     textInput.addEventListener('input', (e) => {
         quizData.questions[qIdx].text = e.target.value;
     });
+
+    // Justificativa (opcional): vazia = não fica no JSON
+    const explanationInput = qDiv.querySelector('.explanation-text');
+    if (explanationInput) {
+        explanationInput.addEventListener('input', (e) => {
+            const value = e.target.value;
+            if (value.trim() === '') {
+                delete quizData.questions[qIdx].explanation;
+            } else {
+                quizData.questions[qIdx].explanation = value;
+            }
+        });
+    }
 
     // Handle option changes (delegation)
     const optionsList = qDiv.querySelector('.options-list');
@@ -478,6 +515,8 @@ const previewCounter = document.getElementById('preview-counter');
 const previewQuestionText = document.getElementById('preview-question-text');
 const previewFigure = document.getElementById('preview-figure');
 const previewOptions = document.getElementById('preview-options');
+const previewExplanation = document.getElementById('preview-explanation');
+const previewExplanationText = document.getElementById('preview-explanation-text');
 const previewPrevBtn = document.getElementById('preview-prev-btn');
 const previewNextBtn = document.getElementById('preview-next-btn');
 const previewNav = document.querySelector('.preview-nav');
@@ -550,6 +589,13 @@ function renderPreview() {
         div.appendChild(document.createTextNode(opt || ''));
         previewOptions.appendChild(div);
     });
+
+    // Justificativa (quando existe)
+    const justificativa = (q.explanation || '').trim();
+    if (previewExplanation && previewExplanationText) {
+        previewExplanationText.textContent = justificativa;
+        previewExplanation.style.display = justificativa ? 'block' : 'none';
+    }
 
     previewPrevBtn.disabled = previewIndex === 0;
     previewNextBtn.disabled = previewIndex === total - 1;

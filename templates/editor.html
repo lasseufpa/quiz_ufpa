@@ -265,6 +265,20 @@
         font-weight: bold;
         margin-right: 8px;
     }
+    .preview-explanation {
+        text-align: left;
+        background: #f7f9fc;
+        border-left: 4px solid #3b4cca;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin: 0 0 16px;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+    }
+    .preview-explanation p {
+        margin: 6px 0 0;
+    }
     .preview-nav {
         display: flex;
         flex-wrap: wrap;
@@ -352,6 +366,10 @@
         <h3 id="preview-question-text" class="preview-question-text"></h3>
         <img id="preview-figure" class="preview-figure" src="" alt="Figura da questão">
         <div id="preview-options" class="preview-options"></div>
+        <div id="preview-explanation" class="preview-explanation" style="display: none;">
+            <strong>Justificativa:</strong>
+            <p id="preview-explanation-text"></p>
+        </div>
         <div class="preview-nav">
             <button id="preview-prev-btn" class="btn btn-secondary">← Anterior</button>
             <button id="preview-next-btn" class="btn btn-primary">Próxima →</button>
@@ -399,5 +417,18 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+    // Tempos automáticos reais (vêm de routines/constants.py) para as dicas
+    window.QUIZ_TIMING = {
+        readingCharsPerSecond: {{ quiz_timing.reading_chars_per_second }},
+        readingMinDuration: {{ quiz_timing.reading_min_duration }},
+        readingMaxDuration: {{ quiz_timing.reading_max_duration }},
+        readingMaxExplicit: {{ quiz_timing.reading_max_explicit }},
+        answerCharsPerSecond: {{ quiz_timing.answer_chars_per_second }},
+        answerMinDuration: {{ quiz_timing.answer_min_duration }},
+        answerMaxDuration: {{ quiz_timing.answer_max_duration }},
+        answerMaxExplicit: {{ quiz_timing.answer_max_explicit }}
+    };
+</script>
 <script src="{{ url_for('static', filename='js/editor.js') }}"></script>
 {% endblock %}
