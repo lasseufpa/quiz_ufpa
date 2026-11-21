@@ -23,6 +23,7 @@ def host_view():
         quiz_title="Quiz UFPA",
         host_ip=get_local_ip(),
         port=os.environ.get('QUIZ_PORT', '5000'),
+        team_name_max_length=constants.TEAM_NAME_MAX_LENGTH,
     )
 
 

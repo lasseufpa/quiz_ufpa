@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+{% block title %}Análise - Entrar{% endblock %}
+{% block content %}
+<div class="login-container">
+    <h2>📊 Modo Análise</h2>
+    <p class="analysis-login-hint">
+        Consulte as pontuações de cada quiz já executado (gerais e por aluno).
+    </p>
+    <form method="POST">
+        <input type="password" name="password" placeholder="Senha do professor" required autofocus>
+        <button type="submit">Entrar</button>
+    </form>
+    {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+</div>
+
+<style>
+    .analysis-login-hint {
+        color: #5a5a5a;
+        margin-bottom: 20px;
+        line-height: 1.5;
+    }
+</style>
+{% endblock %}

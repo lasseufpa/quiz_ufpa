@@ -242,7 +242,7 @@ joinBtn.addEventListener('click', () => {
     if (teamMode) {
         team = selectedTeam;
         if (!team) {
-            alert('Escolha o seu time (Time A ou Time B) para entrar!');
+            alert('Escolha o seu time para entrar!');
             if (teamPicker) teamPicker.scrollIntoView({ block: 'center' });
             return;
         }

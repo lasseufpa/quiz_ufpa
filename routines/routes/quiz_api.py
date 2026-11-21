@@ -166,7 +166,7 @@ def api_export_quiz():
                     log.warning(f'Aviso: figura "{fig}" não encontrada para a pergunta {idx}')
 
     zip_buffer.seek(0)
-    safe_title = data['title'].replace('/', '_').replace('\\', '_')
+    safe_title = files_handler.safe_quiz_name(data['title'])
     return send_file(
         zip_buffer,
         as_attachment=True,
@@ -225,8 +225,7 @@ def api_import_quiz():
                     q['figure'] = 'none'
 
             # Define um nome único dentro da turma de destino
-            base_name = quiz_data['title'].replace('/', '_').replace('\\', '_')
-            quiz_name = files_handler.unique_quiz_name(class_slug, base_name)
+            quiz_name = files_handler.unique_quiz_name(class_slug, quiz_data['title'])
 
             files_handler.save_quiz(class_slug, quiz_name, quiz_data)
 

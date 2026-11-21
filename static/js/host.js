@@ -44,9 +44,39 @@ const joinUrlEl = document.getElementById('join-url');
 const joinClassNameEl = document.getElementById('join-class-name');
 const teamModeInput = document.getElementById('team-mode-input');
 const teamModeHintEl = document.getElementById('team-mode-hint');
+const teamNamesRow = document.getElementById('team-names-row');
+const teamANameInput = document.getElementById('team-a-name');
+const teamBNameInput = document.getElementById('team-b-name');
 
 function teamModeEnabled() {
     return !!(teamModeInput && teamModeInput.checked);
+}
+
+// Nomes escolhidos para os times (vazio volta ao padrão)
+function teamNamesFromInputs() {
+    const fallback = { A: 'Time A', B: 'Time B' };
+    const a = ((teamANameInput && teamANameInput.value) || '').trim() || fallback.A;
+    const b = ((teamBNameInput && teamBNameInput.value) || '').trim() || fallback.B;
+    return { A: a, B: b };
+}
+
+// Mostra os campos de nome só com o modo time ligado
+function updateTeamNamesVisibility() {
+    if (teamNamesRow) {
+        teamNamesRow.style.display = teamModeEnabled() ? 'flex' : 'none';
+    }
+}
+
+if (teamModeInput) {
+    teamModeInput.addEventListener('change', updateTeamNamesVisibility);
+}
+updateTeamNamesVisibility();
+
+// Pontos com no máximo uma casa decimal (média por aluno pode ser fracionária)
+function formatPoints(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '0';
+    return Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ',');
 }
 
 let reopenRoomOnLoad = false;
@@ -208,9 +238,10 @@ function showWaitingPhase() {
 
     if (teamModeHintEl) {
         const ligado = teamModeEnabled();
+        const nomes = teamNamesFromInputs();
         teamModeHintEl.style.display = ligado ? 'inline-block' : 'none';
         teamModeHintEl.textContent = ligado
-            ? 'Modo time ligado — cada aluno escolhe Time A ou Time B ao entrar.'
+            ? `Modo time ligado — cada aluno escolhe "${nomes.A}" ou "${nomes.B}" ao entrar.`
             : '';
     }
 
@@ -227,7 +258,8 @@ function openRoom() {
     // O servidor passa a aceitar os alunos dessa turma (e o modo de jogo)
     socket.emit('open_room', {
         'class': classSelect.value,
-        'team_mode': teamModeEnabled()
+        'team_mode': teamModeEnabled(),
+        'team_names': teamNamesFromInputs()
     });
     showWaitingPhase();
 }
@@ -679,18 +711,24 @@ function renderResultStandings(data) {
             const nome = document.createElement('span');
             nome.textContent = `${team.winning ? '\u{1F3C6} ' : ''}${team.name}`;
             const pts = document.createElement('span');
-            pts.textContent = `${team.score} pts \u00b7 ${posicao}`;
+            // O placar do time é a MÉDIA por aluno; a soma fica ao lado
+            const quantidade = team.count || (team.members || team.top || []).length;
+            pts.textContent =
+                `${formatPoints(team.score)} pts/aluno \u00b7 ${posicao}` +
+                (quantidade ? ` \u00b7 ${quantidade} aluno${quantidade === 1 ? '' : 's'}` : '');
             cabecalho.appendChild(nome);
             cabecalho.appendChild(pts);
             resultsStandingsEl.appendChild(cabecalho);
 
-            (team.top || []).forEach((member, index) => {
+            // Apenas o topo do time (TEAM_TOP_N), com os pontos ABSOLUTOS
+            const melhores = team.top || [];
+            melhores.forEach((member, index) => {
                 const li = document.createElement('li');
                 li.className = 'is-member';
                 const nome = document.createElement('span');
                 nome.textContent = `${index + 1}. ${member.nickname}`;
                 const pts = document.createElement('span');
-                pts.textContent = String(member.score);
+                pts.textContent = `${formatPoints(member.score)} pts`;
                 li.appendChild(nome);
                 li.appendChild(pts);
                 resultsStandingsEl.appendChild(li);
@@ -808,10 +846,14 @@ function renderTeamStandings(teams) {
         const header = document.createElement('li');
         header.className = 'team-header' + (team.winning ? ' winning' : '');
         const posicao = team.tied ? 'empate' : `${team.position}º`;
-        header.textContent = `${team.winning ? '🏆 ' : ''}${team.name} — ${team.score} pontos (${posicao})`;
+        const melhores = team.top || [];
+        const quantidade = team.count || melhores.length;
+        header.textContent =
+            `${team.winning ? '🏆 ' : ''}${team.name} — ` +
+            `${formatPoints(team.score)} pts/aluno (${posicao})` +
+            (quantidade ? ` · ${quantidade} aluno${quantidade === 1 ? '' : 's'}` : '');
         finalScoreListEl.appendChild(header);
 
-        const melhores = team.top || [];
         if (melhores.length === 0) {
             const li = document.createElement('li');
             li.className = 'team-member';
@@ -823,7 +865,8 @@ function renderTeamStandings(teams) {
         melhores.forEach((member, index) => {
             const li = document.createElement('li');
             li.className = 'team-member';
-            li.textContent = `${index + 1}. ${member.nickname}: ${member.score} pontos`;
+            li.textContent = `${index + 1}. ${member.nickname}: ` +
+                `${formatPoints(member.score)} pontos`;
             finalScoreListEl.appendChild(li);
         });
     });
@@ -949,13 +992,13 @@ socket.on('resume_host_state', (data) => {
         answerDuration = Number(data.answer_time);
     }
 
-    currentQuestionData = {
+    currentQuestionData = question_data ? {
         text: question_data.text,
         options: question_data.options,
         chart_path: question_data.chart_path,
         question_index: data.question_index,
         total_questions: data.total_questions
-    };
+    } : null;
 
     console.log(currentQuestionData);
     
@@ -966,7 +1009,8 @@ socket.on('resume_host_state', (data) => {
     gameOverView.style.display = 'none';
 
     // Restore timer for STATE_QUESTION
-    if (gameState === STATE_QUESTION && data.remaining_time !== null && data.remaining_time > 0) {
+    if (gameState === STATE_QUESTION && currentQuestionData
+            && data.remaining_time !== null && data.remaining_time > 0) {
         //hideAnswerTimerNotification();
 
         // 1. Mostra o timer com o tempo restante (arredondado)

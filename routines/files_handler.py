@@ -10,6 +10,7 @@ passam por aqui para garantir escrita atômica e recuperação de backup.
 
 import logging
 import os
+import re
 
 from routines import classes, constants, json_store
 from routines import logger  # noqa: F401  (configura o console + arquivo)
@@ -17,6 +18,31 @@ from routines import logger  # noqa: F401  (configura o console + arquivo)
 log = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+# Caracteres que o Windows não aceita em nomes de arquivo. Títulos de quiz
+# costumam conter `:` (ex.: "Redes Neurais (CNN): Tensores"), que virava um
+# fluxo alternativo do NTFS e quebrava a escrita atômica com WinError 87.
+_INVALID_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_RESERVED_NAMES = frozenset(
+    ['CON', 'PRN', 'AUX', 'NUL']
+    + [f'COM{i}' for i in range(1, 10)]
+    + [f'LPT{i}' for i in range(1, 10)]
+)
+MAX_NAME_LENGTH = 120
+
+
+def safe_quiz_name(name):
+    """Deriva um nome de arquivo de quiz válido em qualquer sistema.
+
+    Substitui caracteres proibidos por `_`, remove espaços/pontos nas
+    extremidades e evita nomes reservados do Windows (`CON`, `NUL`, ...).
+    """
+    safe = _INVALID_NAME_CHARS.sub('_', str(name or ''))
+    safe = safe.strip().strip('.').strip()
+    safe = safe[:MAX_NAME_LENGTH].rstrip('. ')
+    if safe.split('.', 1)[0].upper() in _RESERVED_NAMES:
+        safe = f'_{safe}'
+    return safe or 'quiz'
 
 
 def _validate_slug(class_slug):
@@ -30,9 +56,13 @@ def _validate_slug(class_slug):
 
 
 def _validate_name(quiz_name):
-    """Garante que o nome do quiz não escapa da pasta da turma."""
+    """Garante que o nome do quiz é seguro para virar arquivo dentro da turma."""
     if (not quiz_name or '/' in quiz_name or '\\' in quiz_name
-            or quiz_name.startswith('.')):
+            or quiz_name.startswith('.')
+            or _INVALID_NAME_CHARS.search(quiz_name)
+            or quiz_name != quiz_name.strip()
+            or quiz_name.endswith('.')
+            or quiz_name.split('.', 1)[0].upper() in _RESERVED_NAMES):
         raise ValueError(f"Nome de quiz inválido: {quiz_name!r}")
     return quiz_name
 
@@ -127,10 +157,12 @@ def delete_quiz(class_slug, quiz_name):
 def unique_quiz_name(class_slug, base_name):
     """Nome livre dentro da turma, acrescentando _1, _2... se já existir."""
     folder = quiz_dir(class_slug)
+    base_name = safe_quiz_name(base_name)
     name = base_name
     counter = 1
     while os.path.exists(os.path.join(folder, f'{name}.json')):
-        name = f'{base_name}_{counter}'
+        suffix = f'_{counter}'
+        name = base_name[:MAX_NAME_LENGTH - len(suffix)].rstrip('. ') + suffix
         counter += 1
     return name
 
@@ -152,8 +184,7 @@ def copy_quiz(from_class, from_quiz, to_class, new_name=None):
 
     base = (new_name or '').strip() or from_quiz
     base = ''.join(c if c.isalnum() or c in '.-_' else '_' for c in base).strip('_')
-    if not base:
-        base = from_quiz
+    base = safe_quiz_name(base or from_quiz)
 
     target_name = unique_quiz_name(to_class, base)
     save_quiz(to_class, target_name, data)

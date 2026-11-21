@@ -52,6 +52,7 @@ def restore_full_state():
     runtime.game_state.setdefault('class_slug', None)
     runtime.game_state.setdefault('quiz_name', None)
     runtime.game_state.setdefault('team_mode', False)
+    runtime.game_state.setdefault('team_names', dict(constants.TEAM_NAMES))
     runtime.game_state.setdefault('teams', {})
     runtime.game_state.setdefault('final_teams', [])
     runtime.game_state.setdefault('last_results', None)

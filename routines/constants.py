@@ -38,8 +38,9 @@ GAME_ROOM = 'partida'
 # times ao entrar e os resultados passam a mostrar o placar por time.
 TEAM_MODE_DEFAULT = False
 TEAM_KEYS = ('A', 'B')
-TEAM_NAMES = {'A': 'Time A', 'B': 'Time B'}
-TEAM_TOP_N = 2          # quantos jogadores de cada time aparecem nos resultados
+TEAM_NAMES = {'A': 'Time A', 'B': 'Time B'}   # padrão; o apresentador pode renomear
+TEAM_NAME_MAX_LENGTH = 24      # limite do nome editável no apresentador
+TEAM_TOP_N = 2          # quantos jogadores de cada time aparecem no PNG
 
 # --- Pontuação de competição (bônus por rapidez) ---
 # pts(t) = floor(COMPETITION_MAX_POINTS * sinc(t / COMPETITION_HALF_WINDOW) ^ EXP)

@@ -55,6 +55,8 @@ def on_open_room(data):
 
     game_state['class_slug'] = class_slug
     game_state['team_mode'] = bool(data.get('team_mode', game_state.get('team_mode', False)))
+    if 'team_names' in data:
+        game_state['team_names'] = game_handler.normalize_team_names(data.get('team_names'))
 
     if game_state['team_mode']:
         # Quem já estava na sala precisa de um time (reabertura da sala)

@@ -523,15 +523,16 @@
         },
         options: {
         ignoreHtmlClass: 'no-mathjax'
-        },
-        // No MathJax v4 as fontes são um pacote separado e, por padrão, vêm do
-        // CDN. Aqui apontamos para a cópia local (ver "Escrever fórmulas
-        // matemáticas" no README). Se a cópia local não existir, o carregador
-        // abaixo remove esta seção e tudo volta a vir do CDN.
+        }{%- if mathjax_local_fonts %},
+        // No MathJax v4 as fontes são um pacote separado. A cópia local (ver
+        // "Escrever fórmulas matemáticas" no README) só é apontada quando a
+        // pasta existe: um `fontURL` inexistente gera 404 em cada `.woff2` e
+        // as fórmulas ficam sem glifos. Sem isso, valem as fontes do CDN.
         chtml: {
-        fontURL: '/static/@mathjax/mathjax-newcm-font/chtml/woff2',
-        dynamicPrefix: '/static/@mathjax/mathjax-newcm-font/chtml/dynamic'
+        fontURL: '{{ url_for('static', filename='@mathjax/mathjax-newcm-font/chtml/woff2') }}',
+        dynamicPrefix: '{{ url_for('static', filename='@mathjax/mathjax-newcm-font/chtml/dynamic') }}'
         }
+        {%- endif %}
     };
     </script>
 
@@ -565,7 +566,7 @@
 </head>
 
 <body>
-    <div class="container">
+    <div class="container{% block container_class %}{% endblock %}">
         {% block content %}{% endblock %}
     </div>
 

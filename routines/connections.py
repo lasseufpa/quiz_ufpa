@@ -53,17 +53,21 @@ def connect_host(game_state, QUIZ_DATA):
 
     # 2. If there are players and a quiz is loaded, send the appropriate state
     if game_state['players'] and QUIZ_DATA is not None:
-        # Tell host the current question index and game state
-        q_index = game_state['current_question']
-        question_data = QUIZ_DATA['questions'][q_index]
-        
+        # Tell host the current question index and game state.
+        # Depois do fim do quiz o índice aponta para fora da lista (não há
+        # pergunta atual): nesse caso não há `question_data`, mas o estado
+        # final (placar) ainda precisa ser enviado — por isso o guard.
+        questions = QUIZ_DATA.get('questions') or []
+        q_index = game_state.get('current_question', -1)
+        question_data = questions[q_index] if 0 <= q_index < len(questions) else None
+
         if game_state['question_start_time'] is not None:
             elapsed_time = time.time() - game_state['question_start_time']
         emit('resume_host_state', {
             'current_question': game_state['current_question'],
             'question_data': question_data,
             'state': game_state['state'],
-            'total_questions': len(QUIZ_DATA['questions']),
+            'total_questions': len(questions),
             'question_index': q_index,
             'total_players': game_handler.online_count(game_state),
             'answered_count': len(game_state['answers']),
@@ -75,9 +79,9 @@ def connect_host(game_state, QUIZ_DATA):
         }, to=game_state['host_sid'])
 
         # If game is in QUESTION state, resend the current question
-        if game_state['state'] == constants.STATE_QUESTION and game_state['current_question'] >= 0:
-            q_index = game_state['current_question']
-            question_data = QUIZ_DATA['questions'][q_index]
+        if (game_state['state'] == constants.STATE_QUESTION
+                and game_state['current_question'] >= 0
+                and question_data is not None):
             figure = question_data['figure']
             chart_path = f"{constants.UPLOAD_FOLDER}/{figure}" if figure != "none" else ""
             payload = {

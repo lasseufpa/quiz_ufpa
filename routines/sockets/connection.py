@@ -124,7 +124,7 @@ def on_restore_session(data):
                 'state': game_state['state'],
                 'allow_answer': allow_answer,
                 'team': player_team,
-                'team_name': constants.TEAM_NAMES.get(player_team),
+                'team_name': game_handler.team_names(game_state).get(player_team),
                 # Tabela de pontuação das perguntas já respondidas
                 'score_history': game_logic.player_score_history(game_state, new_sid),
             }, to=new_sid)
@@ -176,10 +176,12 @@ def on_player_join(data):
     # --- Modo time: o aluno precisa dizer em qual time vai competir ---
     team = None
     if game_state.get('team_mode'):
-        team = game_logic.normalize_team(data.get('team'))
+        team = game_logic.normalize_team(
+            data.get('team'), game_handler.team_names(game_state)
+        )
         if team is None:
             emit('join_failed', {
-                'reason': 'Escolha o seu time (Time A ou Time B) antes de entrar.'
+                'reason': 'Escolha o seu time antes de entrar.'
             }, to=request.sid)
             log.warning(f"Falha no login: '{nickname}' não escolheu o time.")
             return
@@ -255,7 +257,7 @@ def on_player_join(data):
         'current_question': game_state['current_question'],
         'players': len(game_state['players']),
         'team': team,
-        'team_name': constants.TEAM_NAMES.get(team),
+        'team_name': game_handler.team_names(game_state).get(team),
         'score_history': game_logic.player_score_history(game_state, request.sid),
     }, to=request.sid)
     persistence.save_full_state(game_state, runtime.quiz_data)

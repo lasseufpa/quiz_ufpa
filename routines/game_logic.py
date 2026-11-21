@@ -18,6 +18,7 @@ from flask import request
 from flask_socketio import emit
 
 from routines import logger  # noqa: F401  (configura o console + arquivo)
+from routines import analysis
 from routines import chart
 from routines import classes
 from routines import constants
@@ -75,6 +76,7 @@ def export_scores_to_csv(scores, competition_scores, players, quiz_data=None,
             ])
 
     log.info(f"✅ Resultados exportados para {filepath}")
+    return filepath
 
 
 # -------------------- Estado da partida --------------------
@@ -100,8 +102,11 @@ def _build_leaderboard(game_state):
 
 
 # -------------------- Modo time --------------------
-def normalize_team(value):
-    """Converte o que veio do cliente ('A', 'Time A', 'TIME B'…) em 'A'/'B'."""
+def normalize_team(value, names=None):
+    """Converte o que veio do cliente ('A', 'Time A', 'Time B'…) em 'A'/'B'.
+
+    `names` permite aceitar também os nomes customizados da partida.
+    """
     if value is None:
         return None
     text = str(value).strip().upper()
@@ -109,8 +114,8 @@ def normalize_team(value):
         return None
     if text in constants.TEAM_KEYS:
         return text
-    for key, name in constants.TEAM_NAMES.items():
-        if text == name.upper() or text.endswith(' ' + key):
+    for key, name in (names or constants.TEAM_NAMES).items():
+        if text == str(name).strip().upper() or text.endswith(' ' + key):
             return key
     last = text[-1]
     return last if last in constants.TEAM_KEYS else None
@@ -132,18 +137,26 @@ def _team_members(game_state, key):
 def build_team_standings(game_state):
     """Placar por time, do que está ganhando para o que está perdendo.
 
-    A pontuação de cada time é a soma dos pontos de competição dos seus
-    jogadores (os mesmos que formavam o pódio). Cada time leva até
-    `TEAM_TOP_N` jogadores em `top` para aparecer nos resultados.
+    A classificação usa a **média por jogador** dos pontos de competição, para
+    que um time com mais gente não fique na frente só por ter mais somas. Cada
+    time leva em `members` todos os seus jogadores, com os pontos **absolutos**
+    de cada um (o que o apresentador vê dentro do bloco), além de `total`
+    (soma) e `count` (quantos são).
     """
+    names = game_handler.team_names(game_state)
     standings = []
     for key in constants.TEAM_KEYS:
         members = _team_members(game_state, key)
+        total = sum(member['score'] for member in members)
+        average = round(total / len(members), 1) if members else 0.0
         standings.append({
             'key': key,
-            'name': constants.TEAM_NAMES.get(key, key),
-            'score': sum(member['score'] for member in members),
+            'name': names[key],
+            'score': average,       # média por aluno (critério do placar)
+            'average': average,
+            'total': total,         # soma dos pontos do time
             'count': len(members),
+            'members': members,     # todos os jogadores, com pontos absolutos
             'top': members[:constants.TEAM_TOP_N],
         })
 
@@ -166,15 +179,22 @@ def finish_game(game_state, quiz_data):
     mesmo lugar. A partida só é zerada quando o professor clica em "Jogar
     novamente" (`reset_for_new_match`).
     """
+    if game_state['state'] == constants.STATE_GAMEOVER:
+        # Clique duplo / "próxima" depois do fim: não gera outra exportação
+        log.warning("finish_game ignorado: a partida já foi encerrada.")
+        return
+
     log.info("Fim do quiz.")
     leaderboard = _build_leaderboard(game_state)
-    export_scores_to_csv(
+    summary_path = export_scores_to_csv(
         game_state['scores'],
         game_state['competition_scores'],
         game_state['players'],
         quiz_data,
         classes.name_of(game_state.get('class_slug')) or None,
     )
+    # Relatório detalhado (aluno × pergunta) para o modo Análise
+    analysis.save_run(game_state, quiz_data, summary_path)
 
     team_mode = bool(game_state.get('team_mode'))
     team_standings = build_team_standings(game_state) if team_mode else []
@@ -476,8 +496,13 @@ def _podium(question_competition_points, game_state):
 
 # -------------------- Histórico do aluno --------------------
 def _record_history_entry(game_state, correct_option_index, points_by_sid):
-    """Guarda o resultado desta pergunta para cada aluno (tabela do celular)."""
+    """Guarda o resultado desta pergunta para cada aluno (tabela do celular).
+
+    Também guarda a alternativa escolhida e o tempo de resposta: são esses
+    dados que alimentam o relatório de análise de cada execução.
+    """
     answers = game_state.get('answers') or {}
+    times = game_state.get('answers_time') or {}
     entry = {
         'index': game_state.get('current_question', -1),
         'players': {},
@@ -485,13 +510,17 @@ def _record_history_entry(game_state, correct_option_index, points_by_sid):
     for sid in game_state.get('players', {}):
         answer = answers.get(sid)
         try:
-            correct = answer is not None and int(answer) == int(correct_option_index)
+            option = int(answer) if answer is not None else None
         except (TypeError, ValueError):
-            correct = False
+            option = None
+        correct = option is not None and option == int(correct_option_index)
+        elapsed = times.get(sid)
         entry['players'][sid] = {
             'answered': answer is not None,
+            'option': option,
             'correct': correct,
             'points': int(points_by_sid.get(sid, 0)),
+            'time': round(elapsed, 2) if isinstance(elapsed, (int, float)) else None,
         }
 
     game_state.setdefault('history', []).append(entry)

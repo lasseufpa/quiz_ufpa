@@ -32,6 +32,7 @@ def clear_game_state():
         'class_slug': None,     # turma da partida atual
         'quiz_name': None,      # quiz escolhido (para repetir a partida)
         'team_mode': constants.TEAM_MODE_DEFAULT,  # modo time ligado?
+        'team_names': dict(constants.TEAM_NAMES),  # nomes editáveis dos times
         'teams': {},            # {sid: 'A'/'B'} — time de cada aluno
         'final_teams': [],      # placar por time da última partida
         'last_results': None,   # payload da última tela de resultados
@@ -53,16 +54,50 @@ def online_count(game_state):
     return sum(1 for sid in game_state['players'] if connected.get(sid, True))
 
 
+def team_names(game_state):
+    """Nomes dos times da partida (`{'A': ..., 'B': ...}`).
+
+    O apresentador pode renomear os times antes de abrir a sala; nomes vazios
+    ou ausentes caem no padrão de `constants.TEAM_NAMES`.
+    """
+    saved = (game_state or {}).get('team_names') or {}
+    names = {}
+    for key in constants.TEAM_KEYS:
+        value = str(saved.get(key) or '').strip()
+        names[key] = (value[:constants.TEAM_NAME_MAX_LENGTH]
+                      or constants.TEAM_NAMES[key])
+    return names
+
+
+def normalize_team_names(raw):
+    """Valida os nomes de time enviados pelo apresentador.
+
+    Ignora entradas vazias (mantém o padrão) e desambigua nomes repetidos, que
+    deixariam o seletor do aluno ambíguo.
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    names = {}
+    for key in constants.TEAM_KEYS:
+        value = str(raw.get(key) or '').strip()
+        names[key] = (value[:constants.TEAM_NAME_MAX_LENGTH].strip()
+                      or constants.TEAM_NAMES[key])
+
+    if names['A'].casefold() == names['B'].casefold():
+        names['B'] = f"{names['B']} (2)"[:constants.TEAM_NAME_MAX_LENGTH]
+    return names
+
+
 def players_payload(game_state):
     """Lista de jogadores para o apresentador: nome, time e se está online."""
     teams = game_state.get('teams', {}) or {}
+    names = team_names(game_state)
     payload = []
     for sid, nickname in game_state['players'].items():
         team = teams.get(sid)
         payload.append({
             'nickname': nickname,
             'team': team,
-            'team_name': constants.TEAM_NAMES.get(team),
+            'team_name': names.get(team),
             'online': is_connected(game_state, sid),
         })
     return payload
@@ -99,6 +134,7 @@ def save_full_state(game_state, QUIZ_DATA, force=True):
             'class_slug': game_state.get('class_slug'),
             'quiz_name': game_state.get('quiz_name'),
             'team_mode': game_state.get('team_mode', False),
+            'team_names': game_state.get('team_names', {}),
             'teams': game_state.get('teams', {}),
             'final_teams': game_state.get('final_teams', []),
             'last_results': game_state.get('last_results'),

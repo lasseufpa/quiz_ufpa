@@ -1,5 +1,6 @@
 *.csv
 *.xlsx
+scores/
 static/*/*.png
 static/*/*.jpeg
 static/*/*.jpg

@@ -5,12 +5,26 @@ import os
 import matplotlib.patches as patches 
 
 
+def _format_points(value):
+    """Pontos com no máximo uma casa decimal (a média por aluno pode quebrar)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return '0'
+    return str(int(number)) if number.is_integer() else f'{number:.1f}'.replace('.', ',')
+
+
+def _team_members_of(team):
+    """Jogadores exibidos no PNG: o topo do time (`TEAM_TOP_N` mais bem colocados)."""
+    return team.get('top') or team.get('members') or []
+
+
 def _draw_team_standings(ax, standings):
-    """Desenha o painel do modo time: quem está ganhando e os melhores de cada time."""
+    """Desenha o painel do modo time: média por aluno e os pontos de cada um."""
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis('off')
-    ax.set_title("Placar por time")
+    ax.set_title("Placar por time (média por aluno)")
 
     blocks = max(len(standings), 1)
     block_height = 1.0 / blocks
@@ -19,7 +33,7 @@ def _draw_team_standings(ax, standings):
         top_y = 1.0 - index * block_height
         color = '#FFD966' if team.get('winning') else '#dfe3e8'
 
-        # Cabeçalho: nome do time e pontuação total
+        # Cabeçalho: nome do time e média por aluno
         header = patches.Rectangle(
             (0.02, top_y - 0.15), 0.96, 0.13,
             linewidth=1, edgecolor='black', facecolor=color, alpha=0.9
@@ -27,7 +41,7 @@ def _draw_team_standings(ax, standings):
         ax.add_patch(header)
         ax.text(0.06, top_y - 0.085, team.get('name', '?'),
                 fontsize=12, fontweight='bold', va='center')
-        ax.text(0.94, top_y - 0.085, f"{team.get('score', 0)} pts",
+        ax.text(0.94, top_y - 0.085, f"{_format_points(team.get('score', 0))} pts/aluno",
                 fontsize=12, fontweight='bold', va='center', ha='right')
 
         # Situação do time na disputa
@@ -35,18 +49,26 @@ def _draw_team_standings(ax, standings):
             situacao = 'Empate na liderança' if team.get('tied') else 'Na frente'
         else:
             situacao = f"{team.get('position', '?')}º lugar"
+        quantidade = team.get('count') or len(_team_members_of(team))
+        if quantidade:
+            situacao += f" · {quantidade} aluno{'s' if quantidade != 1 else ''}"
         ax.text(0.06, top_y - 0.20, situacao, fontsize=9, style='italic',
                 va='center', color='#444')
 
-        # Melhores jogadores do time
-        membros = team.get('top') or []
+        # Todos os jogadores do time, com os pontos absolutos de cada um
+        membros = _team_members_of(team)
         if not membros:
             ax.text(0.06, top_y - 0.30, 'sem jogadores', fontsize=10,
                     style='italic', color='#666', va='center')
+            continue
+
+        espaco = min(0.105, (block_height - 0.34) / len(membros))
+        fonte = 10 if espaco >= 0.08 else (9 if espaco >= 0.06 else 7)
         for pos, member in enumerate(membros, start=1):
-            y = top_y - 0.30 - (pos - 1) * 0.105
-            ax.text(0.08, y, f"{pos}. {member['nickname']}", fontsize=10, va='center')
-            ax.text(0.94, y, str(member['score']), fontsize=10, va='center', ha='right')
+            y = top_y - 0.30 - (pos - 1) * espaco
+            ax.text(0.08, y, f"{pos}. {member['nickname']}", fontsize=fonte, va='center')
+            ax.text(0.94, y, _format_points(member['score']), fontsize=fonte,
+                    va='center', ha='right')
 
 
 def save_combined_results_chart(answer_distribution, question_data, question_index, top3,
@@ -61,8 +83,14 @@ def save_combined_results_chart(answer_distribution, question_data, question_ind
     filename = f"static/graphs/q{question_index + 1}_results.png"
 
     team_mode = bool(team_standings)
+    if team_mode:
+        # A altura cresce com o time mais numeroso: todos aparecem no PNG
+        max_membros = max(
+            (len(_team_members_of(team)) for team in team_standings), default=0
+        )
+        altura = max(3.6, 2.4 + 0.22 * max_membros)
     fig, (ax1, ax2) = plt.subplots(
-        1, 2, figsize=(9, 3.6) if team_mode else (8, 3)
+        1, 2, figsize=(9, altura) if team_mode else (8, 3)
     )
     
     # ---- Subplot 1: Answer distribution bar chart ----

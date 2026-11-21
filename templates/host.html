@@ -17,6 +17,29 @@
         min-width: 260px;
     }
 
+    /* Nomes editáveis dos times (modo time) */
+    .team-names-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 0 0 15px;
+    }
+
+    .team-names-row label {
+        font-size: 0.95rem;
+        color: #444;
+    }
+
+    .team-names-row input {
+        padding: 8px;
+        font-size: 15px;
+        width: 180px;
+        border: 1px solid #c9d0dd;
+        border-radius: 6px;
+    }
+
     /* Sala de espera: QR code + endereço */
     .join-box {
         display: flex;
@@ -338,6 +361,17 @@
         background: #eef2ff;
         color: #2f3fa8;
         font-weight: 700;
+        flex-wrap: wrap;
+        row-gap: 2px;
+    }
+
+    /* Cabeçalho do time: nome à esquerda, média/posição à direita */
+    .results-standings li.is-team > span:last-child {
+        font-size: 0.82rem;
+        font-weight: 600;
+        text-align: right;
+        white-space: nowrap;
+        opacity: 0.9;
     }
 
     .results-standings li.is-member {
@@ -584,6 +618,14 @@
             <input type="checkbox" id="team-mode-input">
             <span>Modo time (Time A × Time B)</span>
         </label>
+        <div id="team-names-row" class="team-names-row" style="display: none;">
+            <label for="team-a-name">Time A:</label>
+            <input id="team-a-name" type="text" maxlength="{{ team_name_max_length }}"
+                   value="Time A" autocomplete="off">
+            <label for="team-b-name">Time B:</label>
+            <input id="team-b-name" type="text" maxlength="{{ team_name_max_length }}"
+                   value="Time B" autocomplete="off">
+        </div>
         <button id="prepare-btn" disabled>Aguardar jogadores</button>
     </div>
 

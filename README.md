@@ -79,6 +79,7 @@ senhas e os CSVs de resultado continuam lá mesmo se o container for apagado.
 | **Apresentador** | `http://localhost:5000/host` | Conduzir a partida (pede senha) |
 | **Administração** | `http://localhost:5000/admin` | Cadastrar os alunos de cada turma (pede senha) |
 | **Editor** | `http://localhost:5000/editor` | Criar turmas, quizzes e copiar quizzes entre turmas |
+| **Análise** | `http://localhost:5000/analise` | Ver as pontuações de cada execução, por pergunta e por aluno (pede senha) |
 | **Guias** | `http://localhost:5000/guia` | Tutoriais de uso de cada tela |
 
 A senha do apresentador e da administração é a mesma: a que você definiu na
@@ -199,17 +200,62 @@ estado salvo).
 Antes de clicar em **Aguardar jogadores**, marque **Modo time (Time A × Time B)**
 na tela do apresentador. Com ele ligado:
 
-- o aluno **escolhe o time** na tela de entrada (*Time A* ou *Time B*); sem
-  escolher, a entrada é recusada com a mensagem "Escolha o seu time";
+- **os times são renomeáveis**: os campos *Time A* e *Time B* aparecem logo
+  abaixo da opção — troque por "Time Azul", "Turma 1", o que quiser (até 24
+  caracteres). O nome escolhido aparece no botão do aluno, na lista da sala, no
+  placar dos resultados e no PNG exportado;
+- o aluno **escolhe o time** na tela de entrada; sem escolher, a entrada é
+  recusada com a mensagem "Escolha o seu time";
 - o apresentador vê o time de cada aluno ao lado do nome, na lista da sala;
 - a tela de resultados troca o **pódio do top 3 global** pelo **placar por
-  time**: quem está na frente (ou *empate na liderança*) e os **dois melhores
-  jogadores de cada time**;
-- o placar final também lista os times na ordem e o top 2 de cada um.
+  time**: quem está na frente (ou *empate na liderança*) e, dentro de cada
+  bloco, **todos os alunos com os seus pontos absolutos**;
+- o placar final também lista os times na ordem e os alunos de cada um.
 
-O time soma os **pontos de competição** dos seus jogadores (os mesmos do pódio,
-que bonificam quem responde mais rápido). Ao desmarcar a opção, a partida volta
-ao formato individual com o top 3 global.
+O placar do time é a **média por aluno** dos **pontos de competição** (os mesmos
+do pódio, que bonificam quem responde mais rápido). A média evita que o time com
+mais gente ganhe só por somar mais respostas; a soma e o número de alunos
+aparecem no cabeçalho do bloco, e dentro de cada time aparecem os **dois
+melhores alunos com os seus pontos**. As pontuações de todos ficam no modo
+Análise (abaixo). Ao desmarcar a opção, a partida volta ao formato individual com
+o top 3 global.
+
+### Analisar uma execução (quem acertou o quê)
+
+Cada partida encerrada gera, na pasta `scores/`, três arquivos com o mesmo
+número de execução:
+
+- `scores_<turma>_<quiz>_<data>[_n].csv` — resumo por aluno (acertos e pontos);
+- `relatorio_<turma>_<quiz>_<data>[_n].csv` — detalhe por questão: uma linha por
+  aluno × pergunta com a alternativa marcada, a correta, se acertou, os pontos e
+  o tempo de resposta (abre direto no Excel/LibreOffice);
+- `relatorio_..._<n>.json` — o mesmo conteúdo estruturado, usado pela tela de
+  Análise.
+
+Para consultar, abra a página **📊 Análise** (`http://localhost:5000/analise`) —
+ela é independente das demais, como o editor e a administração — e entre com a
+**senha do professor**. A lista é navegável por **turma → quiz →
+"Quiz #4 de 19/11/2026"** e cada execução mostra:
+
+- totais: alunos, perguntas, acertos, médias e pontos de competição;
+- **por pergunta**: acertos, % de acerto, média de pontos, tempo médio e a
+  distribuição das respostas (A/B/C/D);
+- **por aluno**: total de acertos e pontos, e uma matriz aluno × pergunta com os
+  pontos ganhos em cada questão (✗ = errou, — = não respondeu).
+
+Execuções antigas, gravadas antes do relatório por pergunta existir, aparecem
+com os totais do CSV e um aviso de que o detalhe só existe nas partidas novas.
+Se o `logs/server.log` da época ainda existir, dá para reconstruir o detalhe:
+cada resposta fica registrada lá com a alternativa e o tempo.
+
+```sh
+python tools/rebuild_reports_from_log.py                     # só mostra o que faria
+python tools/rebuild_reports_from_log.py --date 2026-11-19 --apply
+```
+
+O script recalcula acertos e pontos com a mesma fórmula do jogo e **confere com
+o CSV de resumo** antes de gravar — se algum total divergir, ele avisa e não
+grava (use `--force` para gravar mesmo assim).
 
 ## Simular uma turma (teste)
 
@@ -326,25 +372,28 @@ ela.
 Nos textos das perguntas e das alternativas, escreva as fórmulas entre cifrões:
 `$x[n]$` aparece no meio da linha e `$$\int x(t)\,dt$$` aparece centralizada.
 
-Quem transforma isso em fórmula bonita é o **MathJax**. Por padrão ele é buscado
-na internet (CDN). **Se a sala não tiver internet, baixe uma cópia uma única vez**
-(precisa do [Node.js](https://nodejs.org) instalado):
+Quem transforma isso em fórmula bonita é o **MathJax**. Na primeira execução do
+`app.py` com internet, o próprio app baixa uma cópia (~3 MB) para
+`static/mathjax/` e `static/@mathjax/` em segundo plano — nenhum comando manual é
+necessário. Dali em diante as fórmulas funcionam **offline**: a página usa a
+cópia local e só recorre ao CDN se ela não existir.
 
-```sh
-npm install mathjax@4
-mkdir -p static/mathjax static/@mathjax
-cp -r node_modules/mathjax/* static/mathjax/
-cp -r node_modules/@mathjax/mathjax-newcm-font static/@mathjax/
-```
-
-Com as pastas `static/mathjax/` e `static/@mathjax/` no lugar, as fórmulas passam
-a funcionar **offline**: a página usa a cópia local e só recorre à internet se
-ela não existir.
-
-> As fontes ficam em um pacote separado (`@mathjax/mathjax-newcm-font`), por isso
-> são duas pastas. Nenhuma delas fica salva no repositório, então cada computador
-> que for rodar o sistema sem internet precisa baixá-las uma vez. Depois de
-> copiar, o `node_modules/` pode ser apagado.
+> As pastas `static/mathjax/` e `static/@mathjax/` não ficam no repositório. Se
+> for preparar um computador que ficará sem internet, rode o app uma vez
+> conectado e confira o aviso `MathJax local pronto ...` em `logs/server.log`
+> (ou se `static/@mathjax/mathjax-newcm-font/chtml/woff2/mjx-ncm-n.woff2`
+> existe). Se o download falhar, o app tenta de novo na próxima execução e, até
+> lá, as fórmulas vêm do CDN.
+>
+> Alternativa manual, para quem preferir (precisa do
+> [Node.js](https://nodejs.org)):
+>
+> ```sh
+> npm install mathjax@4
+> mkdir -p static/mathjax static/@mathjax
+> cp -r node_modules/mathjax/* static/mathjax/
+> cp -r node_modules/@mathjax/mathjax-newcm-font static/@mathjax/
+> ```
 
 ## Pontuação e resultados
 
@@ -399,9 +448,10 @@ nunca se misturam.
   arquivo e rode `docker compose up --build`.
 - **Quero recomeçar uma partida.** Use o botão **Finalizar Quiz** na tela do
   apresentador e inicie um novo jogo.
-- **As fórmulas aparecem como texto (`$x[n]$`).** O MathJax não carregou — em
-  geral é falta de internet. Baixe a cópia local indicada em
-  *Escrever fórmulas matemáticas*.
+- **As fórmulas aparecem como texto (`$x[n]$`).** O MathJax não carregou. Com
+  internet, basta recarregar a página; a cópia local é baixada sozinha na
+  próxima execução do app. Sem internet, veja em *Escrever fórmulas matemáticas*
+  como conferir/baixar a cópia local (`static/mathjax/` e `static/@mathjax/`).
 - **Um arquivo JSON foi corrompido.** Alunos, turmas, quizzes e o estado da
   partida são gravados de forma atômica e guardam uma cópia `.bak` da última
   versão válida. Se o arquivo principal quebrar, a cópia é usada e o principal é

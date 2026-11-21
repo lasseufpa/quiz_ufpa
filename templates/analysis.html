@@ -1,0 +1,336 @@
+{% extends "layout.html" %}
+{% block title %}Análise das execuções{% endblock %}
+{% block container_class %} container-wide{% endblock %}
+
+{% block content %}
+<style>
+    /* A lista de execuções e as tabelas não cabem nos 800px do cartão padrão */
+    .container.container-wide {
+        max-width: 1240px;
+    }
+
+    .analysis-container {
+        text-align: left;
+        min-width: 0;
+    }
+
+    .analysis-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+    }
+
+    .analysis-header h1 {
+        margin: 0;
+        font-size: 1.6rem;
+    }
+
+    .analysis-layout {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    /* --- Árvore turma → quiz → execuções --- */
+    .analysis-tree {
+        background: #f7f9fc;
+        border: 1px solid #e7eaf1;
+        border-radius: 12px;
+        padding: 12px 14px;
+    }
+
+    .tree-class {
+        margin-bottom: 10px;
+    }
+
+    .tree-class > summary {
+        cursor: pointer;
+        font-weight: 700;
+        color: #33415c;
+        padding: 6px 4px;
+        list-style: none;
+    }
+
+    .tree-class > summary::-webkit-details-marker { display: none; }
+
+    .tree-class > summary::before {
+        content: '▸';
+        display: inline-block;
+        width: 16px;
+        color: #7b8494;
+        transition: transform 0.15s ease;
+    }
+
+    .tree-class[open] > summary::before {
+        transform: rotate(90deg);
+    }
+
+    .tree-quiz {
+        margin: 6px 0 10px 20px;
+    }
+
+    .tree-quiz-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+        gap: 6px;
+    }
+
+    .tree-run {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: #fff;
+        border: 1px solid #e3e7ef;
+        color: #33415c;
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 8px 10px;
+        margin: 0;
+        border-radius: 8px;
+        cursor: pointer;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .tree-quiz-title {
+        font-size: 0.82rem;
+        color: #6b7280;
+        margin: 0 0 6px;
+        overflow-wrap: anywhere;
+    }
+
+    .tree-run:hover {
+        background: #eef2ff;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .tree-run.active {
+        background: #3b4cca;
+        border-color: #3b4cca;
+        color: #fff;
+    }
+
+    .tree-run .run-meta {
+        display: block;
+        font-size: 0.72rem;
+        font-weight: 500;
+        opacity: 0.8;
+        margin-top: 2px;
+    }
+
+    /* --- Painel de detalhe --- */
+    .analysis-panel {
+        min-width: 0;
+    }
+
+    .analysis-empty {
+        background: #f7f9fc;
+        border: 1px dashed #c9d0dd;
+        border-radius: 12px;
+        padding: 40px 20px;
+        text-align: center;
+        color: #6b7280;
+    }
+
+    .run-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #33415c;
+        margin-bottom: 2px;
+    }
+
+    .run-subtitle {
+        color: #6b7280;
+        font-size: 0.85rem;
+        margin-bottom: 16px;
+        overflow-wrap: anywhere;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .stat-card {
+        background: #f7f9fc;
+        border: 1px solid #e7eaf1;
+        border-radius: 12px;
+        padding: 12px 14px;
+    }
+
+    .stat-card .stat-label {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        color: #7b8494;
+        font-weight: 700;
+    }
+
+    .stat-card .stat-value {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: #2f3fa8;
+        margin-top: 2px;
+    }
+
+    .analysis-section {
+        margin-bottom: 26px;
+    }
+
+    .analysis-section h2 {
+        font-size: 1rem;
+        margin-bottom: 10px;
+        color: #33415c;
+    }
+
+    .analysis-table-wrap {
+        overflow-x: auto;
+        border: 1px solid #e7eaf1;
+        border-radius: 12px;
+    }
+
+    table.analysis-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.84rem;
+    }
+
+    table.analysis-table th,
+    table.analysis-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #f1f3f7;
+        text-align: left;
+        vertical-align: top;
+    }
+
+    table.analysis-table thead th {
+        background: #f7f9fc;
+        color: #6b7280;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        white-space: nowrap;
+        position: sticky;
+        top: 0;
+    }
+
+    table.analysis-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    table.analysis-table td.num,
+    table.analysis-table th.num {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    table.analysis-table td.q-text {
+        max-width: 420px;
+        color: #4b5563;
+    }
+
+    .dist {
+        color: #6b7280;
+        font-size: 0.78rem;
+        white-space: nowrap;
+    }
+
+    /* Matriz aluno × pergunta */
+    table.matrix-table td.cell {
+        text-align: center;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    table.matrix-table td.cell.hit {
+        color: #17703a;
+        background: #f0fdf4;
+    }
+
+    table.matrix-table td.cell.miss {
+        color: #b42318;
+        background: #fef3f2;
+    }
+
+    table.matrix-table td.cell.blank {
+        color: #c9d0dd;
+    }
+
+    table.matrix-table td.player-name {
+        font-weight: 700;
+        color: #33415c;
+        white-space: nowrap;
+    }
+
+    .team-tag {
+        display: inline-block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #2f3fa8;
+        margin-left: 6px;
+    }
+
+    .analysis-note {
+        background: #fff8e6;
+        border: 1px solid #ffe2a8;
+        color: #7a5b00;
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 0.85rem;
+        margin-bottom: 16px;
+        line-height: 1.5;
+    }
+
+    .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+    }
+
+    .filter-row input {
+        padding: 8px 10px;
+        border: 1px solid #c9d0dd;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        width: 220px;
+    }
+</style>
+
+<div class="analysis-container">
+    <div class="analysis-header">
+        <h1>📊 Análise das execuções</h1>
+        <div>
+            <a class="btn btn-danger" href="{{ url_for('analysis_logout') }}">Sair</a>
+        </div>
+    </div>
+
+    <div class="analysis-layout">
+        <aside id="analysis-tree" class="analysis-tree">
+            <p class="analysis-empty" style="padding: 20px 10px;">Carregando…</p>
+        </aside>
+
+        <main id="analysis-panel" class="analysis-panel">
+            <div class="analysis-empty">
+                Escolha uma execução na lista acima para ver as pontuações.
+            </div>
+        </main>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/analysis.js') }}"></script>
+{% endblock %}

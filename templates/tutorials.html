@@ -183,7 +183,8 @@
             <li>Escolha o <strong>quiz</strong>.</li>
             <li>Para uma disputa entre times, marque <strong>Modo time (Time A × Time B)</strong>
                 — os alunos escolhem o time ao entrar e os resultados passam a mostrar o
-                placar por time com o top 2 de cada um.</li>
+                placar por time. Os dois campos ao lado permitem <strong>renomear os
+                times</strong> antes de abrir a sala (ex.: "Time Azul" e "Time Verde").</li>
             <li>Clique em <strong>Aguardar jogadores</strong>. Os seletores somem e aparecem o
                 <strong>QR code</strong> e o endereço da sala.</li>
             <li>Os alunos apontam a câmera do celular para o QR code (ou digitam o endereço).
@@ -304,8 +305,10 @@
             <code>$x[n] = \sum_{k} x[k]\,h[n-k]$</code>. Ela aparece formatada na pré-visualização
             e nas telas do aluno e do apresentador.</p>
         <div class="tip">
-            <strong>Sem internet na sala?</strong> O MathJax precisa estar na cópia local
-            (<code>static/mathjax</code>). Veja o README do projeto para baixá-lo.
+            <strong>Sem internet na sala?</strong> Na primeira execução com internet o app guarda
+            uma cópia local do MathJax (<code>static/mathjax</code> e <code>static/@mathjax</code>),
+            então as fórmulas passam a funcionar offline. Se aparecerem como texto, veja o README
+            do projeto.
         </div>
 
         <h4>Copiar e compartilhar quizzes</h4>
@@ -350,6 +353,19 @@
             <li>Trocar o nome de quem está jogando não altera o placar da partida atual: o nome que
                 aparece na tela e no CSV é o do momento em que ele entrou.</li>
         </ul>
+
+        <h4>Analisar uma execução</h4>
+        <p>Em <strong>📊 Análise</strong> (<code>/analise</code>, uma página própria como o editor e a
+            administração) você consulta as partidas já encerradas, protegido pela mesma senha do
+            professor. Navegue por
+            <strong>turma → quiz → "Quiz #n de dd/mm/aaaa"</strong> para ver os totais, o desempenho
+            de cada pergunta (acertos, %, distribuição das respostas, tempo médio) e a pontuação de
+            cada aluno — inclusive <em>quem acertou cada questão</em>.</p>
+        <div class="tip">
+            <strong>Arquivos gerados:</strong> cada partida também grava em <code>scores/</code> um
+            <code>relatorio_...csv</code> com uma linha por aluno × pergunta (alternativa marcada,
+            acerto, pontos e tempo), além do <code>scores_...csv</code> de resumo.
+        </div>
     </section>
 
     <!-- ================= ALUNO ================= -->
