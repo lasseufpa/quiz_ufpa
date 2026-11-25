@@ -3,6 +3,10 @@
 {% block container_class %} container-wide{% endblock %}
 
 {% block content %}
+{% set active_mode = 'analise' %}
+{% set guide_anchor = 'administrador' %}
+{% include '_side_menu.html' %}
+
 <style>
     /* A lista de execuções e as tabelas não cabem nos 800px do cartão padrão */
     .container.container-wide {
@@ -332,5 +336,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/help_menu.js') }}"></script>
 <script src="{{ url_for('static', filename='js/analysis.js') }}"></script>
 {% endblock %}

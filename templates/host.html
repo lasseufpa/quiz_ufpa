@@ -47,12 +47,12 @@
         justify-content: center;
         gap: 25px;
         flex-wrap: wrap;
-        margin: 20px 0;
+        margin: 14px 0;
     }
 
     .join-box #join-qr svg {
-        width: 220px;
-        height: 220px;
+        width: 200px;
+        height: 200px;
         display: block;
         background: #fff;
         padding: 6px;
@@ -119,7 +119,7 @@
     }
 
     .team-mode-hint {
-        margin: 10px auto 0;
+        margin: 8px auto 10px;
         display: inline-block;
         background: #eef2ff;
         border: 1px solid #c9d3ff;
@@ -128,6 +128,119 @@
         padding: 6px 14px;
         font-weight: 600;
         font-size: 0.9rem;
+    }
+
+    /* Painel de jogadores da sala: altura limitada + rolagem própria para o
+       QR code e os botões continuarem visíveis enquanto a turma entra. */
+    #lobby-player-status {
+        display: grid;
+        gap: 12px;
+        max-width: 760px;
+        margin: 0 auto 14px;
+    }
+
+    .player-panel {
+        min-width: 0;
+        padding: 10px 12px;
+        border: 1px solid #e7eaf1;
+        border-radius: 14px;
+        background: #fafbff;
+        text-align: left;
+    }
+
+    .player-panel-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 0 0 8px;
+        color: #33415c;
+        font-size: 0.82rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+
+    .player-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2.2em;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #e7ebff;
+        color: #2f3fa8;
+        font-size: 0.85rem;
+        letter-spacing: 0;
+    }
+
+    #team-player-panels {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .team-panel-a {
+        border-color: #c9d3ff;
+    }
+
+    .team-panel-b {
+        border-color: #ffd0da;
+    }
+
+    .team-panel-a .player-count {
+        background: #dbe4ff;
+        color: #2f3fa8;
+    }
+
+    .team-panel-b .player-count {
+        background: #ffe0e6;
+        color: #a82f56;
+    }
+
+    .lobby-player-list {
+        max-width: none;
+        max-height: 150px;
+        margin: 0;
+        padding: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        text-align: left;
+    }
+
+    .lobby-player-list li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 2px 0;
+        padding: 6px 8px;
+        border-radius: 8px;
+        background-color: transparent;
+        font-size: 0.95rem;
+        font-weight: 600;
+        text-align: left;
+    }
+
+    .lobby-player-list li:nth-child(odd) {
+        background-color: #fff;
+    }
+
+    .lobby-player-list li.player-empty {
+        justify-content: center;
+        background-color: transparent;
+        color: #7b8494;
+        font-style: italic;
+        font-weight: 500;
+    }
+
+    @media (max-width: 640px) {
+        #team-player-panels {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .lobby-player-list {
+            max-height: 120px;
+        }
     }
 
     .team-badge {
@@ -461,160 +574,11 @@
         color: #888;
     }
 
-    /* --- Botões de menu/ajuda --- */
-    .menu-btn {
-        position: fixed;
-        top: 16px;
-        z-index: 1200;
-        width: 46px;
-        height: 46px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
-        margin: 0;
-        border: none;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.92);
-        color: #3b4cca;
-        font-family: inherit;
-        font-size: 22px;
-        font-weight: 700;
-        line-height: 1;
-        text-decoration: none;
-        text-transform: none;
-        letter-spacing: 0;
-        cursor: pointer;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    #menu-toggle {
-        left: 16px;
-    }
-
-    #help-toggle {
-        left: 72px;
-    }
-
-    .menu-btn:hover {
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
-        transform: translateY(-2px);
-    }
-
-    /* --- Menu lateral --- */
-    .side-menu {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 300px;
-        max-width: 85vw;
-        height: 100%;
-        background: #fff;
-        box-shadow: 2px 0 20px rgba(0, 0, 0, 0.25);
-        transform: translateX(-105%);
-        visibility: hidden;
-        transition: transform 0.25s ease, visibility 0.25s ease;
-        z-index: 1400;
-        padding-bottom: 20px;
-        overflow-y: auto;
-        text-align: left;
-    }
-
-    .side-menu.open {
-        transform: translateX(0);
-        visibility: visible;
-    }
-
-    .side-menu-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 18px 20px 14px;
-        border-bottom: 1px solid #eee;
-        font-weight: 700;
-        color: #444;
-    }
-
-    .side-menu-close {
-        background: none;
-        color: #888;
-        padding: 0 4px;
-        margin: 0;
-        font-size: 18px;
-        box-shadow: none;
-    }
-
-    .side-menu-close:hover:not(:disabled) {
-        box-shadow: none;
-        transform: none;
-        color: #333;
-    }
-
-    .side-menu nav a {
-        display: block;
-        padding: 12px 20px;
-        color: #333;
-        text-decoration: none;
-        font-size: 0.95rem;
-        font-weight: 600;
-    }
-
-    .side-menu nav a:hover {
-        background: #eef2ff;
-        color: #3b4cca;
-    }
-
-    .side-menu-title {
-        padding: 16px 20px 6px;
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.8px;
-        color: #999;
-        font-weight: 700;
-    }
-
-    .side-menu-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.45);
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.25s ease;
-        z-index: 1300;
-    }
-
-    .side-menu-overlay.open {
-        opacity: 1;
-        pointer-events: auto;
-    }
 </style>
 
-<!-- Menu lateral + ajuda -->
-<button id="menu-toggle" class="menu-btn" title="Menu" aria-label="Abrir menu">☰</button>
-<a id="help-toggle" class="menu-btn" href="{{ url_for('tutorial') }}#apresentador"
-   target="_blank" rel="noopener" title="Guia de uso" aria-label="Abrir guia de uso">?</a>
-
-<div id="side-menu" class="side-menu" aria-hidden="true">
-    <div class="side-menu-header">
-        <span>Menu</span>
-        <button id="side-menu-close" class="side-menu-close" aria-label="Fechar menu">✕</button>
-    </div>
-    <nav>
-        <p class="side-menu-title">Partida</p>
-        <a href="#" id="change-selection-menu">↩ Trocar turma/quiz (fecha a sala)</a>
-        <p class="side-menu-title">Guias de uso</p>
-        <a href="{{ url_for('tutorial') }}#apresentador" target="_blank" rel="noopener">🎤 Guia do apresentador</a>
-        <a href="{{ url_for('tutorial') }}#editor" target="_blank" rel="noopener">📝 Guia do editor</a>
-        <a href="{{ url_for('tutorial') }}#administrador" target="_blank" rel="noopener">👥 Guia do administrador</a>
-        <a href="{{ url_for('tutorial') }}#aluno" target="_blank" rel="noopener">📱 Guia do aluno</a>
-        <p class="side-menu-title">Abrir em outra aba</p>
-        <a href="{{ url_for('editor_view') }}" target="_blank" rel="noopener">📝 Editor de quizzes</a>
-        <a href="{{ url_for('admin_view') }}" target="_blank" rel="noopener">👥 Administração</a>
-        <a href="{{ url_for('player_join') }}" target="_blank" rel="noopener">📱 Tela do aluno</a>
-    </nav>
-</div>
-<div id="side-menu-overlay" class="side-menu-overlay"></div>
+{% set active_mode = 'host' %}
+{% set guide_anchor = 'apresentador' %}
+{% include '_side_menu.html' %}
 
 <div id="lobby" style="display: none;" data-join-base="http://{{ host_ip }}:{{ port }}">
     <h1>{{ quiz_title }}</h1>
@@ -665,10 +629,34 @@
             </div>
         </div>
 
-        <ul id="player-list" class="player-list">
-        </ul>
-
         <p id="team-mode-hint" class="team-mode-hint" style="display: none;"></p>
+
+        <div id="lobby-player-status">
+            <div id="single-player-panel" class="player-panel">
+                <h3 class="player-panel-title">
+                    <span>Jogadores</span>
+                    <span id="player-count" class="player-count">0</span>
+                </h3>
+                <ul id="player-list" class="player-list lobby-player-list"></ul>
+            </div>
+
+            <div id="team-player-panels" style="display: none;">
+                <section class="player-panel team-panel-a">
+                    <h3 class="player-panel-title">
+                        <span id="team-a-label">Time A</span>
+                        <span id="team-a-count" class="player-count">0</span>
+                    </h3>
+                    <ul id="team-a-list" class="player-list lobby-player-list"></ul>
+                </section>
+                <section class="player-panel team-panel-b">
+                    <h3 class="player-panel-title">
+                        <span id="team-b-label">Time B</span>
+                        <span id="team-b-count" class="player-count">0</span>
+                    </h3>
+                    <ul id="team-b-list" class="player-list lobby-player-list"></ul>
+                </section>
+            </div>
+        </div>
 
         <button id="start-game-btn" disabled>Iniciar Jogo (0 Jogadores)</button>
         <button id="force-end-btn" style="display: none; background-color: #dc3545; margin-top: 10px;">Finalizar

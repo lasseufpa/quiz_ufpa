@@ -1,5 +1,14 @@
 const startBtn = document.getElementById('start-game-btn');
 const playerListEl = document.getElementById('player-list');
+const singlePlayerPanel = document.getElementById('single-player-panel');
+const teamPlayerPanels = document.getElementById('team-player-panels');
+const playerCountEl = document.getElementById('player-count');
+const teamAListEl = document.getElementById('team-a-list');
+const teamBListEl = document.getElementById('team-b-list');
+const teamACountEl = document.getElementById('team-a-count');
+const teamBCountEl = document.getElementById('team-b-count');
+const teamALabelEl = document.getElementById('team-a-label');
+const teamBLabelEl = document.getElementById('team-b-label');
 
 const forceEndBtn = document.getElementById('force-end-btn');
 const forceEndQuestionBtn = document.getElementById('force-end-question-btn');
@@ -95,6 +104,12 @@ let answerDuration = QUESTION_DURATION;
 let answering = false;
 
 let currentQuestionData = null; // stores text, options, chart_path, index, total
+
+// Estado da sala de espera (lista única ou colunas por time)
+let lobbyPlayers = [];
+let lobbyPlayerCount = 0;
+let lobbyTeamMode = false;
+let lobbyTeamNames = { A: 'Time A', B: 'Time B' };
 // Avisa o servidor que esta é a tela do host — em toda conexão (inclusive
 // depois de o servidor reiniciar, quando o socket se reconecta sozinho e o
 // servidor não sabe mais quem é o apresentador).
@@ -209,7 +224,7 @@ function updatePrepareBtn() {
 }
 
 function updateStartBtn(total) {
-    const jogadores = (total === undefined) ? playerListEl.children.length : total;
+    const jogadores = (total === undefined) ? lobbyPlayerCount : total;
     startBtn.textContent = `Iniciar Jogo (${jogadores} Jogadores)`;
     startBtn.disabled = jogadores === 0 || !quizSelect.value;
 }
@@ -230,6 +245,103 @@ function renderJoinQr(url) {
     }
 }
 
+// -------------------- Lista de jogadores da sala --------------------
+function updateTeamPanelLabels() {
+    if (teamALabelEl) teamALabelEl.textContent = lobbyTeamNames.A || 'Time A';
+    if (teamBLabelEl) teamBLabelEl.textContent = lobbyTeamNames.B || 'Time B';
+}
+
+function fillPlayerList(listEl, entries, showBadge) {
+    listEl.innerHTML = '';
+
+    if (entries.length === 0) {
+        const empty = document.createElement('li');
+        empty.className = 'player-empty';
+        empty.textContent = 'Ninguém entrou ainda.';
+        listEl.appendChild(empty);
+        return;
+    }
+
+    entries.forEach((entry) => {
+        // O servidor pode mandar só o nome (versões antigas) ou um objeto
+        const nome = (typeof entry === 'string')
+            ? entry
+            : ((entry && entry.nickname) || '');
+        const timeNome = (typeof entry === 'object' && entry)
+            ? entry.team_name
+            : null;
+
+        const li = document.createElement('li');
+        const nameEl = document.createElement('span');
+        nameEl.textContent = nome;
+        li.appendChild(nameEl);
+
+        if (showBadge && timeNome) {
+            const badge = document.createElement('span');
+            badge.className = 'team-badge ' + (entry.team === 'B' ? 'team-b' : 'team-a');
+            badge.textContent = timeNome;
+            li.appendChild(badge);
+        }
+
+        listEl.appendChild(li);
+    });
+}
+
+function renderPlayerList(players) {
+    lobbyPlayers = players || [];
+    lobbyPlayerCount = lobbyPlayers.length;
+
+    // Depois de um F5, o modo time pode vir do servidor ou dos próprios
+    // jogadores (cada um traz `team` e `team_name`).
+    const emTimes = lobbyTeamMode || lobbyPlayers.some(
+        (entry) => entry && entry.team
+    );
+    lobbyPlayers.forEach((entry) => {
+        if (entry && entry.team && entry.team_name) {
+            lobbyTeamNames[entry.team] = entry.team_name;
+        }
+    });
+    updateTeamPanelLabels();
+
+    if (singlePlayerPanel) {
+        singlePlayerPanel.style.display = emTimes ? 'none' : 'block';
+    }
+    if (teamPlayerPanels) {
+        teamPlayerPanels.style.display = emTimes ? 'grid' : 'none';
+    }
+
+    if (emTimes) {
+        const teams = { A: [], B: [] };
+        lobbyPlayers.forEach((entry) => {
+            const key = (entry && entry.team === 'B') ? 'B' : 'A';
+            teams[key].push(entry);
+        });
+        fillPlayerList(teamAListEl, teams.A, false);
+        fillPlayerList(teamBListEl, teams.B, false);
+        if (teamACountEl) teamACountEl.textContent = teams.A.length;
+        if (teamBCountEl) teamBCountEl.textContent = teams.B.length;
+    } else {
+        fillPlayerList(playerListEl, lobbyPlayers, true);
+    }
+    if (playerCountEl) playerCountEl.textContent = lobbyPlayerCount;
+
+    updateStartBtn(lobbyPlayerCount);
+    forceEndBtn.style.display = lobbyPlayerCount > 0 ? 'block' : 'none';
+}
+
+function clearPlayerLists() {
+    lobbyPlayers = [];
+    lobbyPlayerCount = 0;
+    playerListEl.innerHTML = '';
+    teamAListEl.innerHTML = '';
+    teamBListEl.innerHTML = '';
+    if (playerCountEl) playerCountEl.textContent = '0';
+    if (teamACountEl) teamACountEl.textContent = '0';
+    if (teamBCountEl) teamBCountEl.textContent = '0';
+    updateStartBtn(0);
+    forceEndBtn.style.display = 'none';
+}
+
 // Mostra o QR/endereço e a lista de quem foi entrando
 function showWaitingPhase() {
     const base = lobbyView.dataset.joinBase || window.location.origin;
@@ -239,18 +351,21 @@ function showWaitingPhase() {
     joinClassNameEl.textContent = slug ? selectedClassName() : '(selecione a turma)';
     renderJoinQr(base);
 
+    lobbyTeamMode = teamModeEnabled();
+    lobbyTeamNames = teamNamesFromInputs();
+    updateTeamPanelLabels();
+
     if (teamModeHintEl) {
-        const ligado = teamModeEnabled();
-        const nomes = teamNamesFromInputs();
+        const ligado = lobbyTeamMode;
         teamModeHintEl.style.display = ligado ? 'inline-block' : 'none';
         teamModeHintEl.textContent = ligado
-            ? `Modo time ligado — cada aluno escolhe "${nomes.A}" ou "${nomes.B}" ao entrar.`
+            ? `Modo time ligado — cada aluno escolhe "${lobbyTeamNames.A}" ou "${lobbyTeamNames.B}" ao entrar.`
             : '';
     }
 
     lobbySetup.style.display = 'none';
     lobbyWaiting.style.display = 'block';
-    updateStartBtn();
+    renderPlayerList(lobbyPlayers);
 }
 
 function openRoom() {
@@ -272,7 +387,7 @@ function openRoom() {
 function closeRoom() {
     // Trocar turma/quiz é sempre permitido: o servidor fecha a sala e expulsa
     // os alunos (eles entram de novo quando a sala reabrir).
-    const jogadores = playerListEl.children.length;
+    const jogadores = lobbyPlayerCount;
     if (jogadores > 0) {
         const ok = confirm(
             `Fechar a sala e expulsar ${jogadores} aluno(s)?\n\n` +
@@ -292,7 +407,8 @@ socket.on('room_closed', () => {
     resultsView.style.display = 'none';
     gameOverView.style.display = 'none';
     hideAnswerTimerNotification();
-    playerListEl.innerHTML = '';
+    clearPlayerLists();
+    lobbyTeamMode = false;
     finalScoreListEl.innerHTML = '';
     currentQuestionData = null;
     pendingQuizName = '';
@@ -320,35 +436,35 @@ if (changeSelectionMenu) {
 
 // Atualiza a lista de jogadores no lobby
 socket.on('update_player_list', (players) => {
-    //lobbyView.style.display='block'
-    players = players || [];
-    playerListEl.innerHTML = '';
-    players.forEach((entry) => {
-        // O servidor pode mandar só o nome (versões antigas) ou um objeto
-        const nome = (typeof entry === 'string') ? entry : (entry.nickname || '');
-        const timeNome = (typeof entry === 'object' && entry) ? entry.team_name : null;
-
-        const li = document.createElement('li');
-        li.textContent = nome;
-
-        if (timeNome) {
-            const badge = document.createElement('span');
-            badge.className = 'team-badge ' + (entry.team === 'B' ? 'team-b' : 'team-a');
-            badge.textContent = timeNome;
-            li.appendChild(badge);
-        }
-
-        playerListEl.appendChild(li);
-    });
-    updateStartBtn(players.length);
-
-    forceEndBtn.style.display = players.length > 0 ? 'block' : 'none';
-
+    renderPlayerList(players || []);
 });
 
 socket.on('room_info', (data) => {
     if (showQuestionOnPlayersInput) {
         showQuestionOnPlayersInput.checked = !!(data && data.show_question_on_players);
+    }
+
+    // Só sincroniza com uma sala aberta: ao fechar, os nomes digitados nos
+    // campos de time são preservados para a próxima partida.
+    if (data && data.class_name) {
+        if (data.teams) {
+            lobbyTeamNames = {
+                A: data.teams.A || 'Time A',
+                B: data.teams.B || 'Time B'
+            };
+            if (teamANameInput) teamANameInput.value = lobbyTeamNames.A;
+            if (teamBNameInput) teamBNameInput.value = lobbyTeamNames.B;
+        }
+
+        if (typeof data.team_mode === 'boolean') {
+            lobbyTeamMode = data.team_mode;
+            if (teamModeInput) teamModeInput.checked = data.team_mode;
+            updateTeamNamesVisibility();
+        }
+    }
+
+    if (lobbyWaiting.style.display !== 'none') {
+        renderPlayerList(lobbyPlayers);
     }
 });
 
@@ -958,7 +1074,7 @@ socket.on('game_restarted', (data) => {
     hideAnswerTimerNotification();
     finalScoreListEl.innerHTML = '';
     currentQuestionData = null;
-    playerListEl.innerHTML = '';
+    clearPlayerLists();
 
     if (data && data.quiz_name) {
         pendingQuizName = data.quiz_name;
@@ -1001,6 +1117,22 @@ socket.on('resume_host_state', (data) => {
     }
     if (data.answer_time != null && Number(data.answer_time) >= 0) {
         answerDuration = Number(data.answer_time);
+    }
+
+    // Mantém o modo time e os nomes escolhidos depois de um F5.
+    if (typeof data.team_mode === 'boolean') {
+        lobbyTeamMode = data.team_mode;
+        if (teamModeInput) teamModeInput.checked = data.team_mode;
+        updateTeamNamesVisibility();
+    }
+    if (data.team_names) {
+        lobbyTeamNames = {
+            A: data.team_names.A || 'Time A',
+            B: data.team_names.B || 'Time B'
+        };
+        if (teamANameInput) teamANameInput.value = lobbyTeamNames.A;
+        if (teamBNameInput) teamBNameInput.value = lobbyTeamNames.B;
+        updateTeamPanelLabels();
     }
 
     currentQuestionData = question_data ? {

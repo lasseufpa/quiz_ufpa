@@ -75,6 +75,7 @@ def connect_host(game_state, QUIZ_DATA):
             'leaderboard': game_state.get('final_leaderboard', []),
             'teams': game_state.get('final_teams', []),
             'team_mode': bool(game_state.get('team_mode')),
+            'team_names': game_handler.team_names(game_state),
             'quiz_name': game_state.get('quiz_name')
         }, to=game_state['host_sid'])
 

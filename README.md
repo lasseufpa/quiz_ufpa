@@ -78,18 +78,22 @@ senhas e os CSVs de resultado continuam lá mesmo se o container for apagado.
 | **Aluno** | `http://<ip>:5000` | Informar o nome e responder (quando a sala está aberta) |
 | **Apresentador** | `http://localhost:5000/host` | Conduzir a partida (pede senha) |
 | **Administração** | `http://localhost:5000/admin` | Cadastrar os alunos de cada turma (pede senha) |
-| **Editor** | `http://localhost:5000/editor` | Criar turmas, quizzes e copiar quizzes entre turmas |
+| **Editor** | `http://localhost:5000/editor` | Criar turmas, quizzes e copiar quizzes entre turmas (pede a senha do administrador) |
 | **Análise** | `http://localhost:5000/analise` | Ver as pontuações de cada execução, por pergunta e por aluno (pede senha) |
 | **Guias** | `http://localhost:5000/guia` | Tutoriais de uso de cada tela |
 
-A senha do apresentador e da administração é a mesma: a que você definiu na
-primeira vez que abriu o sistema.
+A senha do apresentador, da administração e do editor é a mesma: a que você
+definiu na primeira vez que abriu o sistema.
 
-Dentro da tela do apresentador há dois botões no canto superior esquerdo:
+Dentro das telas do professor (apresentador, editor, administração e análise)
+há dois botões no canto superior esquerdo:
 
-- **☰** — abre o menu lateral, com atalhos para os guias de uso e para as
-  outras telas (sempre em outra aba, para não pausar a partida).
-- **?** — abre direto o guia do apresentador.
+- **☰** — abre o menu lateral, com atalhos para os quatro modos e para os
+  guias de uso (sempre em outra aba, para não pausar a partida).
+- **?** — abre direto o guia da tela atual.
+
+A tela do aluno não mostra esse menu: ela é o único modo sem acesso às outras
+telas.
 
 Os guias também ficam em `http://localhost:5000/guia`, em abas: apresentador,
 editor, administrador e aluno. Cada aba mostra só o tutorial escolhido, e
@@ -210,7 +214,9 @@ na tela do apresentador. Com ele ligado:
   placar dos resultados e no PNG exportado;
 - o aluno **escolhe o time** na tela de entrada; sem escolher, a entrada é
   recusada com a mensagem "Escolha o seu time";
-- o apresentador vê o time de cada aluno ao lado do nome, na lista da sala;
+- durante a espera, o apresentador vê **Time A e Time B em colunas separadas**,
+  cada uma com a contagem de alunos e uma lista com rolagem própria — o QR code
+  continua visível enquanto a turma entra;
 - a tela de resultados troca o **pódio do top 3 global** pelo **placar por
   time**: quem está na frente (ou *empate na liderança*) e, dentro de cada
   bloco, **todos os alunos com os seus pontos absolutos**;
@@ -312,7 +318,8 @@ partir da pergunta seguinte.
 (`http://localhost:5000/admin`, com a senha do professor):
 
 1. Escolha a **turma** no seletor do topo.
-2. **Adicionar** — digite o nome e clique em *Adicionar*.
+2. **Adicionar** — digite o nome e clique em *Adicionar*. Para cadastrar vários
+   de uma vez, separe os nomes com `;` ou `,` (ex.: `Ana; Beto, Carla`).
 3. **Editar** — clique em *Editar*, mude o nome e clique em *Salvar*.
 4. **Remover** — clique em *Remover* e confirme.
 
@@ -321,8 +328,8 @@ consegue entrar na *Turma padrão*, e vice-versa. Nomes não diferenciam
 maiúsculas de minúsculas (`Ana` e `ana` são a mesma pessoa).
 ## Criar e editar quizzes
 
-Abra a tela *Editor* (`http://localhost:5000/editor`). Tudo é feito pela
-interface — não é preciso mexer em arquivos.
+Abra a tela *Editor* (`http://localhost:5000/editor`) e entre com a **senha do
+administrador**. Tudo é feito pela interface — não é preciso mexer em arquivos.
 
 1. Escolha a **turma** na primeira linha.
 2. Escolha o quiz na segunda linha (ou deixe em *-- Novo Quiz --*).

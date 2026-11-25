@@ -2,6 +2,10 @@
 {% block title %}Editor de Quizzes{% endblock %}
 
 {% block content %}
+{% set active_mode = 'editor' %}
+{% set guide_anchor = 'editor' %}
+{% include '_side_menu.html' %}
+
 <style>
     .container {
         max-width: 1020px;
@@ -430,5 +434,6 @@
         answerMaxExplicit: {{ quiz_timing.answer_max_explicit }}
     };
 </script>
+<script src="{{ url_for('static', filename='js/help_menu.js') }}"></script>
 <script src="{{ url_for('static', filename='js/editor.js') }}"></script>
 {% endblock %}

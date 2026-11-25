@@ -70,6 +70,13 @@ def _clean_students(students):
     return list(seen.values())
 
 
+def split_names(value):
+    """Separa uma entrada com vários nomes por `;`, `,` ou quebra de linha."""
+    if not isinstance(value, str):
+        return []
+    return [name.strip() for name in re.split(r'[;,\r\n]+', value) if name.strip()]
+
+
 # -------------------- Persistência --------------------
 def load():
     """Carrega o cadastro de turmas do disco para a memória."""
@@ -207,19 +214,37 @@ def find_student(class_slug, nickname):
 
 def add_student(class_slug, nickname):
     """Adiciona um aluno. Retorna (nome_canonico, erro)."""
-    info = _classes.get(class_slug)
-    if info is None:
-        return None, 'Turma não encontrada.'
-
     nickname = (nickname or '').strip()
     if not nickname:
         return None, 'O nome não pode ser vazio.'
-    if find_student(class_slug, nickname) is not None:
-        return None, f'O nome "{nickname}" (ou variação) já existe nesta turma.'
 
-    info['students'] = _clean_students(info['students'] + [nickname])
-    save()
-    return nickname, None
+    added, errors = add_students(class_slug, [nickname])
+    if errors:
+        return None, errors[0]
+    return added[0], None
+
+
+def add_students(class_slug, names):
+    """Adiciona vários alunos de uma vez. Retorna (adicionados, erros)."""
+    info = _classes.get(class_slug)
+    if info is None:
+        return [], ['Turma não encontrada.']
+
+    added, errors = [], []
+    for nickname in names:
+        nickname = (nickname or '').strip()
+        if not nickname:
+            continue
+        if find_student(class_slug, nickname) is not None or any(
+                name.lower() == nickname.lower() for name in added):
+            errors.append(f'O nome "{nickname}" (ou variação) já existe nesta turma.')
+            continue
+        added.append(nickname)
+
+    if added:
+        info['students'] = _clean_students(info['students'] + added)
+        save()
+    return added, errors
 
 
 def remove_student(class_slug, nickname):

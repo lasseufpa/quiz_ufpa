@@ -38,7 +38,9 @@ def check_session():
 
 
 def editor_view():
-    """Página de gerenciamento de quizzes."""
+    """Página de gerenciamento de quizzes (protegida pela senha do admin)."""
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_login', next=url_for('editor_view')))
     return render_template(
         'editor.html',
         # Valores reais dos tempos automáticos, usados nas dicas dos campos

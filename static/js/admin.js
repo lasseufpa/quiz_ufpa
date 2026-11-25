@@ -179,7 +179,8 @@ socket.on('update_user_list', (payload) => {
     });
 });
 
-// 4. Envia um novo usuário para ADICIONAR (Sem mudanças)
+// 4. Envia um ou mais novos usuários para ADICIONAR.
+// Nomes podem vir separados por ";" ou "," na mesma entrada.
 addBtn.addEventListener('click', () => {
     const nickname = nicknameInput.value.trim();
     if (!currentClass) {

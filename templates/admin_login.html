@@ -11,7 +11,8 @@
 {% endif %}
 {% endwith %}
 
-<form method="POST" action="{{ url_for('admin_login') }}">
+<form method="POST"
+      action="{{ url_for('admin_login', next=next_url) if next_url else url_for('admin_login') }}">
     <input type="password" name="password" placeholder="Sua senha" required
         style="font-size: 18px; padding: 10px; border-radius: 5px; border: 1px solid #ccc;">
     <br><br>

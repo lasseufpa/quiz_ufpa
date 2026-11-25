@@ -82,16 +82,24 @@ def host_login():
     return render_template('host_login.html')
 
 
+def _safe_next_url():
+    """Destino local informado por `?next=` (evita redirecionamento externo)."""
+    target = request.values.get('next') or ''
+    if target.startswith('/') and not target.startswith('//'):
+        return target
+    return None
+
+
 def admin_login():
-    """Login do painel de administração."""
+    """Login do painel de administração (também libera o editor)."""
     if request.method == 'POST':
         if _password_matches(request.form.get('password')):
             session['admin_logged_in'] = True
             log.info("Login de admin bem-sucedido.")
-            return redirect(url_for('admin_view'))
+            return redirect(_safe_next_url() or url_for('admin_view'))
         flash('Senha incorreta!', 'error')
         log.warning("Tentativa de login de admin falhou.")
-    return render_template('admin_login.html')
+    return render_template('admin_login.html', next_url=_safe_next_url())
 
 
 def admin_view():

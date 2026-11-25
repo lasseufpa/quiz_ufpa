@@ -1,4 +1,4 @@
-// Menu lateral (hambúrguer) do painel do apresentador.
+// Menu lateral (hambúrguer) compartilhado pelas telas do professor.
 // O botão "?" é um link direto para o guia (abre em outra aba, definido no HTML).
 
 (function () {

@@ -2,6 +2,10 @@
 {% block title %}Admin - Gerenciar Usuários{% endblock %}
 
 {% block content %}
+{% set active_mode = 'admin' %}
+{% set guide_anchor = 'administrador' %}
+{% include '_side_menu.html' %}
+
 <a href="{{ url_for('admin_logout') }}" style="float: right; color: #dc3545; text-decoration: none;">
     Sair (Logout)
 </a>
@@ -16,10 +20,13 @@
     </select>
 </div>
 
-<div id="add-user-form" class="form-row" style="margin-bottom: 10px;">
+<div id="add-user-form" class="form-row" style="margin-bottom: 6px;">
     <input type="text" id="nickname-input" placeholder="Nome do novo jogador">
     <button id="add-btn" class="btn btn-primary">Adicionar</button>
 </div>
+<p style="font-size: 0.82rem; color: #777; margin: 0 0 10px;">
+    Para cadastrar vários de uma vez, separe os nomes com <code>;</code> ou <code>,</code>.
+</p>
 
 <hr style="margin: 30px 0;">
 
@@ -30,5 +37,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/help_menu.js') }}"></script>
 <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
 {% endblock %}

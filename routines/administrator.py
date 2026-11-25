@@ -61,7 +61,7 @@ def admin_join(data=None):
 
 
 def add_user(data):
-    """Admin adicionou um aluno à turma."""
+    """Admin adicionou um ou mais alunos à turma (separados por ; ou ,)."""
     if not _is_admin():
         return
 
@@ -70,13 +70,17 @@ def add_user(data):
         _error('Turma não encontrada.')
         return
 
-    nickname, error = classes.add_student(class_slug, data.get('nickname'))
-    if error:
-        _error(error)
+    names = classes.split_names((data or {}).get('nickname'))
+    if not names:
+        _error('O nome não pode ser vazio.')
         return
 
-    log.info(f"Aluno adicionado em {class_slug}: {nickname}")
-    _broadcast_user_list(class_slug)
+    added, errors = classes.add_students(class_slug, names)
+    if added:
+        log.info(f"Aluno(s) adicionado(s) em {class_slug}: {', '.join(added)}")
+        _broadcast_user_list(class_slug)
+    if errors:
+        _error(' '.join(errors))
 
 
 def remove_user(data):
