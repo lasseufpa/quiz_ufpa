@@ -55,6 +55,9 @@ def on_open_room(data):
 
     game_state['class_slug'] = class_slug
     game_state['team_mode'] = bool(data.get('team_mode', game_state.get('team_mode', False)))
+    game_state['show_question_on_players'] = bool(
+        data.get('show_question_on_players', False)
+    )
     if 'team_names' in data:
         game_state['team_names'] = game_handler.normalize_team_names(data.get('team_names'))
 

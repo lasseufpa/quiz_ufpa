@@ -190,10 +190,14 @@ estado salvo).
 | Estado | Quem vê o quê | Como sai |
 |--------|----------------|----------|
 | **Lobby** (0) | Alunos na tela de espera ou digitando o nome; host com o QR code | *Iniciar Jogo*, *Finalizar Quiz* ou fechar a sala |
-| **Pergunta / leitura** (1) | Pergunta na tela, alternativas bloqueadas (📖) | fim do tempo de leitura |
+| **Pergunta / leitura** (1) | Pergunta na tela; no celular as alternativas ficam ocultas (📖) | fim do tempo de leitura |
 | **Pergunta / respostas** (1) | Alternativas liberadas (⏱️) | *Mostrar Resultados* ou fim do contador |
-| **Resultados** (2) | Alternativa correta, gráfico e pódio da questão | *Próxima Pergunta* ou *Finalizar Quiz* |
+| **Resultados** (2) | Alternativa correta, gráfico, pódio da questão e a posição de cada aluno na pergunta e no agregado | *Próxima Pergunta* ou *Finalizar Quiz* |
 | **Fim do quiz** (3) | Placar final para todos | *Jogar novamente* ou fechar a sala |
+
+A posição "na pergunta" usa os pontos de competição daquela questão (o mesmo
+critério do pódio) e a "no agregado" usa os pontos acumulados (o mesmo critério
+do placar final). Empates aparecem indicados no selo.
 
 ### Modo time (Time A × Time B)
 
@@ -219,6 +223,12 @@ aparecem no cabeçalho do bloco, e dentro de cada time aparecem os **dois
 melhores alunos com os seus pontos**. As pontuações de todos ficam no modo
 Análise (abaixo). Ao desmarcar a opção, a partida volta ao formato individual com
 o top 3 global.
+
+Na mesma tela, marque **Mostrar pergunta e alternativas nos celulares** para que
+os alunos vejam o enunciado e o texto completo de cada alternativa enquanto
+respondem. A resposta correta continua oculta até o apresentador mostrar os
+resultados. No celular, as alternativas aparecem em uma coluna para facilitar
+a leitura.
 
 ### Analisar uma execução (quem acertou o quê)
 

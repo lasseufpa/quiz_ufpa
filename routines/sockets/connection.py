@@ -115,12 +115,24 @@ def on_restore_session(data):
             join_room(constants.GAME_ROOM, sid=new_sid)
 
             player_team = game_state.get('teams', {}).get(new_sid)
+            questions = (runtime.quiz_data or {}).get('questions') or []
+            current_question = game_state['current_question']
+            question_data = (
+                questions[current_question]
+                if 0 <= current_question < len(questions)
+                else {}
+            )
 
             emit('session_restored', {
                 'nickname': nickname,
-                'current_question': game_state['current_question'],
+                'current_question': current_question,
                 'current_score': game_state['scores'].get(new_sid, 0),
-                'options': [0, 1, 2, 3],
+                'text': question_data.get('text', ''),
+                'options': question_data.get('options') or [0, 1, 2, 3],
+                'total_questions': len(questions),
+                'show_question_on_players': bool(
+                    game_state.get('show_question_on_players')
+                ),
                 'state': game_state['state'],
                 'allow_answer': allow_answer,
                 'team': player_team,

@@ -391,6 +391,9 @@ def advance_question(socketio, game_state, quiz_data):
         'question_index': q_index,
         'total_questions': len(quiz_data['questions']),
         'chart_path': chart_path,
+        'show_question_on_players': bool(
+            game_state.get('show_question_on_players')
+        ),
         'reading_time': reading_seconds,
         'answer_time': answer_seconds,
     }
@@ -527,11 +530,37 @@ def _record_history_entry(game_state, correct_option_index, points_by_sid):
     return entry
 
 
+def _rank_info(scores, sid):
+    """Posição do aluno em um placar {sid: pontos}, com empates.
+
+    Quem tem a mesma pontuação divide a posição; `total` é quantos alunos
+    entraram no placar (todos os jogadores da partida).
+    """
+    try:
+        mine = int(scores.get(sid, 0))
+    except (TypeError, ValueError):
+        mine = 0
+
+    values = []
+    for value in scores.values():
+        try:
+            values.append(int(value))
+        except (TypeError, ValueError):
+            values.append(0)
+
+    return {
+        'position': sum(1 for value in values if value > mine) + 1,
+        'total': len(values),
+        'tied': sum(1 for value in values if value == mine) > 1,
+    }
+
+
 def player_score_history(game_state, sid):
     """Linhas da tabela de pontuação de um aluno (mais recente primeiro).
 
     Cada linha: {'question_index', 'answered', 'correct', 'points'}.
-    Inclui também os totais acumulados (pontos de competição e acertos).
+    Inclui também os totais acumulados (pontos de competição e acertos) e a
+    posição do aluno na pergunta mais recente e no agregado da partida.
     """
     rows = []
     for entry in game_state.get('history') or []:
@@ -548,11 +577,24 @@ def player_score_history(game_state, sid):
     # Mais recente no topo, primeira pergunta na última linha
     rows.sort(key=lambda row: row['question_index'], reverse=True)
 
+    question_rank = None
+    history = game_state.get('history') or []
+    if history:
+        latest_points = {
+            player_sid: int((mark or {}).get('points', 0))
+            for player_sid, mark in (history[-1].get('players') or {}).items()
+        }
+        question_rank = _rank_info(latest_points, sid)
+
     return {
         'rows': rows,
         'total_points': int(game_state['competition_scores'].get(sid, 0)),
         'total_correct': int(game_state['scores'].get(sid, 0)),
         'total_questions': int(game_state.get('total_questions') or 0),
+        'question_rank': question_rank,
+        'aggregate_rank': _rank_info(
+            game_state.get('competition_scores') or {}, sid
+        ),
     }
 
 

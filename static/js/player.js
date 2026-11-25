@@ -10,12 +10,16 @@ const teamDisplay = document.getElementById('team-display');
 const teamResultDisplay = document.getElementById('team-result-display');
 const optionsGrid = document.getElementById('options-grid');
 const questionTextEl = document.getElementById('question-text');
+const readingHintEl = document.getElementById('reading-hint');
 const resultTextEl = document.getElementById('result-text');
 const scoreDisplayEl = document.getElementById('score-display');
 const waitMessageEl = document.getElementById('wait-message');
 const teamLineEl = document.getElementById('team-line');
 const scoreHistoryEl = document.getElementById('score-history');
 const scoreHistoryBodyEl = document.getElementById('score-history-body');
+const rankBadgesEl = document.getElementById('rank-badges');
+const questionRankEl = document.getElementById('question-rank');
+const aggregateRankEl = document.getElementById('aggregate-rank');
 
 const STATE_LOBBY = 0
 const STATE_QUESTION = 1
@@ -30,7 +34,9 @@ let mySid = null;
 let myTeam = null;
 let teamMode = false;   // o professor ligou o modo time?
 let selectedTeam = null; // 'A' ou 'B' — escolhido nos botões de time
+let showQuestionOnPlayers = false;
 let currentTotalQuestions = 0;   // total de perguntas do quiz atual
+let lastScoreHistoryData = null;
 let sessionToken = localStorage.getItem('quizSessionToken');
 // Só recebe/mostra eventos de jogo depois que o servidor confirma a entrada.
 // Sem isso, quem ainda está digitando o nome via as alternativas aparecerem
@@ -96,18 +102,44 @@ function show_question(data) {
     if (data && data.total_questions) {
         currentTotalQuestions = data.total_questions;
     }
+    if (data && typeof data.show_question_on_players === 'boolean') {
+        showQuestionOnPlayers = data.show_question_on_players;
+    }
     waitView.style.display = 'none';
     resultView.style.display = 'none';
     questionView.style.display = 'block';
+    questionView.classList.toggle('show-question-content', showQuestionOnPlayers);
+    document.body.classList.toggle('player-question-open', showQuestionOnPlayers);
 
-    questionTextEl.textContent = '';
+    questionTextEl.textContent = showQuestionOnPlayers ? (data.text || '') : '';
     optionsGrid.innerHTML = '';
+    // Durante a leitura o aluno vê a pergunta (e o enunciado, quando o
+    // professor habilitou), mas as alternativas só aparecem em answer_allowed.
+    optionsGrid.style.display = 'none';
+    if (readingHintEl) {
+        readingHintEl.textContent = showQuestionOnPlayers
+            ? 'Leia a pergunta. As alternativas serão liberadas em instantes...'
+            : 'Leia a pergunta no projetor. As alternativas serão liberadas em instantes...';
+        readingHintEl.style.display = 'block';
+    }
+    hideRanks();
 
     const letters = ['A', 'B', 'C', 'D'];
 
     data.options.forEach((option, index) => {
         const btn = document.createElement('button');
-        btn.textContent = letters[index] || '?';
+        btn.type = 'button';
+        if (showQuestionOnPlayers) {
+            const letter = document.createElement('span');
+            letter.className = 'option-letter';
+            letter.textContent = letters[index] || '?';
+            const answerText = document.createElement('span');
+            answerText.className = 'option-content';
+            answerText.textContent = option;
+            btn.append(letter, answerText);
+        } else {
+            btn.textContent = letters[index] || '?';
+        }
         btn.classList.add('option-btn');
         btn.dataset.index = index;
 
@@ -134,10 +166,20 @@ function show_question(data) {
 
         optionsGrid.appendChild(btn);
     });
+
+    if (showQuestionOnPlayers && typeof window.renderQuizMath === 'function') {
+        window.renderQuizMath(questionTextEl);
+    }
 }
 
 function allow_answers(){
-const buttons = optionsGrid.querySelectorAll('.option-btn');
+    if (readingHintEl) readingHintEl.style.display = 'none';
+    optionsGrid.style.display = '';
+    if (showQuestionOnPlayers && typeof window.renderQuizMath === 'function') {
+        window.renderQuizMath(optionsGrid);
+    }
+
+    const buttons = optionsGrid.querySelectorAll('.option-btn');
     buttons.forEach(btn => {
         if (myLastAnswerIndex === null) {
             btn.disabled = false;
@@ -170,10 +212,57 @@ function update_waiting_screen(myLastAnswerIndex, correctOptionIndex){
     }
 }
 
+// -------------------- Posição do aluno --------------------
+// Posições calculadas no servidor com o mesmo critério do pódio (pontos da
+// pergunta) e do placar final (pontos de competição acumulados).
+function formatRank(info, label) {
+    if (!info || !Number.isFinite(Number(info.position)) || !Number(info.total)) {
+        return '';
+    }
+    const tied = info.tied ? ' (empate)' : '';
+    return `${label}: ${info.position}º${tied} de ${info.total}`;
+}
+
+function hideRanks() {
+    if (!rankBadgesEl) return;
+    rankBadgesEl.style.display = 'none';
+    if (questionRankEl) {
+        questionRankEl.textContent = '';
+        questionRankEl.style.display = 'none';
+    }
+    if (aggregateRankEl) {
+        aggregateRankEl.textContent = '';
+        aggregateRankEl.style.display = 'none';
+    }
+}
+
+function renderRanks(data) {
+    if (!rankBadgesEl) return;
+
+    const questionText = data
+        ? formatRank(data.question_rank, 'Nesta pergunta')
+        : '';
+    const aggregateText = data
+        ? formatRank(data.aggregate_rank, 'No agregado')
+        : '';
+
+    if (questionRankEl) {
+        questionRankEl.textContent = questionText;
+        questionRankEl.style.display = questionText ? 'inline-block' : 'none';
+    }
+    if (aggregateRankEl) {
+        aggregateRankEl.textContent = aggregateText;
+        aggregateRankEl.style.display = aggregateText ? 'inline-block' : 'none';
+    }
+    rankBadgesEl.style.display = (questionText || aggregateText) ? 'flex' : 'none';
+}
+
 // -------------------- Tabela de pontuação --------------------
 // O servidor manda a tabela pronta, com a pergunta mais recente no topo e o
 // total acumulado no fim (evento `score_history`, personalizado por aluno).
 function renderScoreHistory(data) {
+    lastScoreHistoryData = data || null;
+    renderRanks(data);
     if (!scoreHistoryEl || !scoreHistoryBodyEl) return;
 
     const rows = (data && data.rows) || [];
@@ -307,6 +396,7 @@ socket.on('room_info', (data) => {
     const aberta = !!(data && data.class_name);
 
     teamMode = !!(data && data.team_mode);
+    showQuestionOnPlayers = !!(data && data.show_question_on_players);
     renderTeamOptions(data && data.teams);
 
     roomClassNameEl.textContent = aberta ? data.class_name : '';
@@ -425,6 +515,7 @@ if (data.current_question >= 0) {
             parseInt(storedQuestionIdx) === data.current_question) {
             // Already answered this exact question → show waiting screen
             resultTextEl.textContent = 'Resposta recebida! Aguardando resultados...';
+            hideRanks();
         } else {
             // No answer for the current question → clear stale data and show question
             myLastAnswerIndex = null;
@@ -439,7 +530,10 @@ if (data.current_question >= 0) {
     }
     if (data.state == STATE_GAMEOVER) {
         resultView.style.display = 'block';
-        resultTextEl.textContent = 'O JOGO TERMINOU! Obrigado por jogar.';
+        resultTextEl.textContent = 'Fim do Quiz';
+        renderRanks({
+            aggregate_rank: lastScoreHistoryData && lastScoreHistoryData.aggregate_rank
+        });
     }
     if (allow_answer){
     allow_answers();
@@ -472,6 +566,7 @@ socket.on('answer_received', () => {
     questionView.style.display = 'none';
     resultView.style.display = 'block';
     resultTextEl.textContent = 'Resposta recebida! Aguardando resultados...';
+    hideRanks();
     localStorage.setItem('answerReceived', true);
 });
 
@@ -481,6 +576,7 @@ socket.on('show_results', (data) => {
     if (!joined) return;
     questionView.style.display = 'none';
     resultView.style.display = 'block';
+    hideRanks();  // o evento `score_history` traz as posições desta pergunta
 
     const myScore = data.scores[mySid] || 0;
     scoreDisplayEl.textContent = myScore;
@@ -504,12 +600,17 @@ socket.on('game_over', (payload) => {
     const lista = Array.isArray(payload) ? payload : ((payload && payload.leaderboard) || []);
     questionView.style.display = 'none';
     resultView.style.display = 'block';
-    resultTextEl.textContent = 'O JOGO TERMINOU! Obrigado por jogar.';
+    resultTextEl.textContent = 'Fim do Quiz';
     // Encontrar o score correto para este jogador
     const playerEntry = lista.find(player => player.nickname === nicknameDisplay.textContent);
     if (playerEntry) {
         scoreDisplayEl.textContent = playerEntry.score;
     }
+    // No fim do quiz só faz sentido a posição agregada (a da última pergunta
+    // continua sendo a mesma, mas o rótulo "nesta pergunta" confundiria).
+    renderRanks({
+        aggregate_rank: lastScoreHistoryData && lastScoreHistoryData.aggregate_rank
+    });
 });
 
 // O professor clicou em "Jogar novamente": volta para a tela de espera,

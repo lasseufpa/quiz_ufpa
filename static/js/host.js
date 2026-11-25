@@ -43,6 +43,7 @@ const joinQrEl = document.getElementById('join-qr');
 const joinUrlEl = document.getElementById('join-url');
 const joinClassNameEl = document.getElementById('join-class-name');
 const teamModeInput = document.getElementById('team-mode-input');
+const showQuestionOnPlayersInput = document.getElementById('show-question-on-players-input');
 const teamModeHintEl = document.getElementById('team-mode-hint');
 const teamNamesRow = document.getElementById('team-names-row');
 const teamANameInput = document.getElementById('team-a-name');
@@ -112,10 +113,12 @@ socket.on('admin_error', (data) => {
 
 lobbyView.style.display = 'block';
 
-function renderMath() {
-    if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
-        MathJax.typesetPromise().catch(err => console.warn('MathJax error:', err));
-    }
+// O MathJax carrega de forma assíncrona: pedir o typeset antes de ele iniciar
+// era ignorado e obrigava a recarregar a página. A fila do layout espera o
+// startup e processa o conteúdo assim que ele estiver pronto.
+function renderMath(elements) {
+    if (typeof window.renderQuizMath !== 'function') return;
+    return window.renderQuizMath(elements || document.body);
 }
 
 // Preenche uma alternativa garantindo que "texto + LaTeX + texto" flua como
@@ -259,6 +262,8 @@ function openRoom() {
     socket.emit('open_room', {
         'class': classSelect.value,
         'team_mode': teamModeEnabled(),
+        'show_question_on_players': !!(showQuestionOnPlayersInput
+            && showQuestionOnPlayersInput.checked),
         'team_names': teamNamesFromInputs()
     });
     showWaitingPhase();
@@ -339,6 +344,12 @@ socket.on('update_player_list', (players) => {
 
     forceEndBtn.style.display = players.length > 0 ? 'block' : 'none';
 
+});
+
+socket.on('room_info', (data) => {
+    if (showQuestionOnPlayersInput) {
+        showQuestionOnPlayersInput.checked = !!(data && data.show_question_on_players);
+    }
 });
 
 // Função para finalizar o quiz
@@ -436,7 +447,6 @@ socket.on('show_question', (data) => {
 
     questionTextEl.textContent = `(${data.question_index + 1}/${data.total_questions}) ${data.text}`;
 
-    renderMath();
     const optionsContainerId = 'options-list-host';
     let optionsContainer = document.getElementById(optionsContainerId);
 
@@ -470,6 +480,7 @@ socket.on('show_question', (data) => {
         total_questions: data.total_questions
     };
 
+    renderMath(questionTextEl);
 });
 
 let answerTimerNotification = null;
@@ -598,7 +609,7 @@ socket.on('answer_allowed', (data) => {
         optionsContainer.appendChild(btn);
     });
     optionsContainer.style.display = "grid";
-    renderMath();
+    renderMath(optionsContainer);
     showAnswerTimerNotification();
 });
 
@@ -790,7 +801,7 @@ function renderResults(data) {
     renderResultStandings(data);
 
     resultsView.style.display = 'block';
-    renderMath();  // tiposeta o enunciado/alternativas com LaTeX
+    renderMath(resultsView);  // tiposeta o enunciado/alternativas com LaTeX
 }
 
 // "Baixar imagem": o servidor gera o PNG (matplotlib) sob demanda
@@ -1020,7 +1031,6 @@ socket.on('resume_host_state', (data) => {
         const questionTextEl = document.getElementById('question-text');
         if (questionTextEl && currentQuestionData) {
             questionTextEl.textContent = `(${currentQuestionData.question_index + 1}/${currentQuestionData.total_questions}) ${currentQuestionData.text}`;
-            renderMath(); // se houver MathJax
         }
 
         // 3. Restaura o gráfico da pergunta
@@ -1049,6 +1059,7 @@ socket.on('resume_host_state', (data) => {
             optionsContainer.appendChild(btn);
         });
         optionsContainer.style.display = 'grid';
+        renderMath(questionView);
     } 
     else if (gameState !== STATE_QUESTION) {
         hideAnswerTimerNotification();
@@ -1187,7 +1198,7 @@ function showQuestionAgain() {
     // Show modal
     modal.style.display = 'flex';
 
-    renderMath();   
+    renderMath(modal);
 }
 
 // Close modal

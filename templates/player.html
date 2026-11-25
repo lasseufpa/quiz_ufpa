@@ -3,6 +3,87 @@
 
 {% block content %}
 <style>
+    body.player-question-open {
+        align-items: flex-start;
+        padding: 12px;
+    }
+
+    body.player-question-open .container {
+        padding: clamp(16px, 4vw, 28px);
+    }
+
+    @media (max-width: 480px) {
+        body.player-question-open {
+            padding: 8px;
+        }
+
+        body.player-question-open .container {
+            padding: 16px;
+        }
+    }
+
+    #question-view {
+        box-sizing: border-box;
+        width: min(100%, 760px);
+        margin: 0 auto;
+        padding: 8px;
+    }
+
+    #question-view.show-question-content #question-text {
+        margin: 8px 0 16px;
+        font-size: clamp(1.25rem, 5vw, 2rem);
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+    }
+
+    #question-view.show-question-content .grid-options {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        margin-top: 16px;
+    }
+
+    #question-view.show-question-content .option-btn {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 56px;
+        padding: 12px;
+        justify-content: flex-start;
+        text-align: left;
+        font-size: clamp(1rem, 3.8vw, 1.25rem);
+        text-transform: none;
+        overflow-wrap: anywhere;
+    }
+
+    #question-view.show-question-content .option-letter {
+        flex: 0 0 2.1em;
+        text-align: center;
+    }
+
+    .reading-hint {
+        margin: 10px 0 0;
+        color: #5a5a5a;
+        font-size: 0.95rem;
+        font-weight: 600;
+    }
+
+    .rank-badges {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        margin: 10px auto;
+    }
+
+    .rank-badge {
+        padding: 6px 12px;
+        border: 1px solid #c9d3ff;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #2f3fa8;
+        font-size: 0.9rem;
+        font-weight: 700;
+    }
+
     /* Escolha do time: dois botões grandes (verde = Time A, vermelho = Time B) */
     .team-picker {
         display: flex;
@@ -154,6 +235,9 @@
 
 <div id="question-view" style="display: none;">
     <h3 id="question-text">Texto da Pergunta</h3>
+    <p id="reading-hint" class="reading-hint" style="display: none;">
+        Leia a pergunta. As alternativas serão liberadas em instantes...
+    </p>
     <div id="options-grid" class="grid-options">
     </div>
 </div>
@@ -161,6 +245,11 @@
 <div id="result-view" style="display: none;">
     <h2 id="result-text">Aguardando próxima pergunta...</h2>
     <p>Sua pontuação: <strong id="score-display">0</strong></p>
+
+    <div id="rank-badges" class="rank-badges" style="display: none;">
+        <span id="question-rank" class="rank-badge"></span>
+        <span id="aggregate-rank" class="rank-badge"></span>
+    </div>
 
     <!-- Tabela de pontuação: pergunta mais recente no topo, total na última linha -->
     <div id="score-history" class="score-history" style="display: none;">

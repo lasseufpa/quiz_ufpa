@@ -99,6 +99,25 @@
         accent-color: #3b4cca;
     }
 
+    .player-question-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin: 0 0 15px;
+        font-size: 0.95rem;
+        color: #444;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .player-question-toggle input {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: #3b4cca;
+    }
+
     .team-mode-hint {
         margin: 10px auto 0;
         display: inline-block;
@@ -626,6 +645,10 @@
             <input id="team-b-name" type="text" maxlength="{{ team_name_max_length }}"
                    value="Time B" autocomplete="off">
         </div>
+        <label class="player-question-toggle" for="show-question-on-players-input">
+            <input type="checkbox" id="show-question-on-players-input">
+            <span>Mostrar pergunta e alternativas nos celulares</span>
+        </label>
         <button id="prepare-btn" disabled>Aguardar jogadores</button>
     </div>
 

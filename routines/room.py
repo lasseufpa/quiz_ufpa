@@ -18,6 +18,7 @@ def payload():
         'state': game_state.get('state', constants.STATE_LOBBY),
         # Modo time: a tela do aluno mostra o seletor de time ao entrar
         'team_mode': bool(game_state.get('team_mode')),
+        'show_question_on_players': bool(game_state.get('show_question_on_players')),
         'teams': game_handler.team_names(game_state),
     }
 

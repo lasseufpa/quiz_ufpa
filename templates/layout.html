@@ -542,24 +542,113 @@
     <script>
     (function () {
         var CDN_SRC = 'https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js';
+        var pending = [];
+        var resolveReady;
+        var ready = new Promise(function (resolve) { resolveReady = resolve; });
+        var readyDone = false;
 
-        function loadScript(src, onError) {
+        function markReady() {
+            if (!readyDone) {
+                readyDone = true;
+                resolveReady(window.MathJax || null);
+                flush();
+            }
+        }
+
+        // O typesetPromise só existe depois que o startup do MathJax termina.
+        function watchStartup() {
+            var mj = window.MathJax;
+            if (!mj || typeof mj.typesetPromise !== 'function') return false;
+
+            var startup = mj.startup && mj.startup.promise;
+            (startup ? Promise.resolve(startup) : Promise.resolve())
+                .then(markReady, markReady);
+            return true;
+        }
+
+        function waitForStartup() {
+            if (watchStartup()) return;
+
+            // O script pode terminar de baixar antes de o startup aparecer.
+            var attempts = 0;
+            var timer = setInterval(function () {
+                attempts += 1;
+                if (watchStartup()) {
+                    clearInterval(timer);
+                } else if (attempts >= 100) {
+                    // Offline e sem cópia local: não segura a fila para sempre.
+                    clearInterval(timer);
+                    markReady();
+                }
+            }, 100);
+        }
+
+        function loadScript(src) {
             var script = document.createElement('script');
             script.id = 'MathJax-script';
             script.async = true;
             script.src = src;
-            if (onError) { script.onerror = onError; }
             document.head.appendChild(script);
             return script;
         }
 
         var local = loadScript("{{ url_for('static', filename='mathjax/tex-chtml.js') }}");
+        local.onload = waitForStartup;
         local.onerror = function () {
             console.warn('MathJax local não encontrado; carregando do CDN.');
             // Sem a cópia local, as fontes também voltam para o CDN
             delete window.MathJax.chtml;
             local.remove();
-            loadScript(CDN_SRC);
+            var cdn = loadScript(CDN_SRC);
+            cdn.onload = waitForStartup;
+            cdn.onerror = markReady;
+        };
+
+        // Fila de typeset: perguntas criadas antes do MathJax terminar de
+        // iniciar ficam pendentes em vez de serem ignoradas (era o que exigia
+        // recarregar a página a cada pergunta).
+        function collect(elements) {
+            var targets = (!elements)
+                ? [document.body]
+                : (elements.nodeType ? [elements] : Array.prototype.slice.call(elements));
+            targets.forEach(function (el) {
+                if (el && pending.indexOf(el) === -1) pending.push(el);
+            });
+        }
+
+        function flush() {
+            if (!readyDone) return;
+
+            var targets = pending;
+            pending = [];
+            targets = targets.filter(function (el) { return el && el.isConnected; });
+            if (!targets.length || !window.MathJax) return;
+
+            var mj = window.MathJax;
+            try {
+                if (typeof mj.typesetClear === 'function') mj.typesetClear(targets);
+                if (typeof mj.typeset === 'function') {
+                    // Síncrono: não fica preso quando o typesetPromise do
+                    // MathJax v4 não conclui (ex.: falha no worker de voz).
+                    var result = mj.typeset(targets);
+                    if (result && typeof result.catch === 'function') {
+                        result.catch(function (error) {
+                            console.warn('MathJax error:', error);
+                        });
+                    }
+                } else if (typeof mj.typesetPromise === 'function') {
+                    mj.typesetPromise(targets)
+                        .catch(function (error) { console.warn('MathJax error:', error); });
+                }
+            } catch (error) {
+                console.warn('MathJax error:', error);
+            }
+        }
+
+        window.renderQuizMath = function (elements) {
+            collect(elements);
+            flush();
+            return ready;
         };
     })();
     </script>

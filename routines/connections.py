@@ -90,6 +90,9 @@ def connect_host(game_state, QUIZ_DATA):
                 'question_index': q_index,
                 'total_questions': len(QUIZ_DATA['questions']),
                 'chart_path': chart_path,
+                'show_question_on_players': bool(
+                    game_state.get('show_question_on_players')
+                ),
                 'remaining_time': _remaining(),
                 'reading_time': game_state.get('reading_duration'),
                 'reading_remaining': _reading_left(),
