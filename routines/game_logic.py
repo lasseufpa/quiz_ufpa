@@ -446,12 +446,31 @@ def _sinc(t):
     return np.sin(np.pi * t + 1e-5) / (np.pi * t + 1e-5)
 
 
+def competition_points(elapsed, answer_duration):
+    """Bônus de competição de uma resposta que levou `elapsed` segundos.
+
+    O bônus depende da fração do tempo de resposta da pergunta que o aluno
+    gastou — p = 100 * t / T, com T = `answer_time` daquela pergunta (o
+    `answer_duration` da partida). Assim a curva é a mesma para perguntas
+    com 10 s ou 120 s de resposta: máxima para quem responde na hora e zero
+    para quem usa todo o tempo disponível.
+    """
+    if elapsed is None or elapsed < 0:
+        return 0
+    total = answer_duration if answer_duration and answer_duration > 0 \
+        else constants.QUESTION_DURATION
+    percent = min(100.0, 100.0 * elapsed / total)
+    value = _sinc(percent / constants.COMPETITION_ZERO_PERCENT)
+    return int(constants.COMPETITION_MAX_POINTS * value ** constants.COMPETITION_EXPONENT)
+
+
 def _score_answers(game_state, correct_option_index):
     """
     Atualiza as duas pontuações:
       - Avaliação: 1 ponto por resposta correta.
-      - Competição: bônus por rapidez, até COMPETITION_MAX_POINTS, que zera em
-        COMPETITION_HALF_WINDOW segundos (a curva está em routines/figures.py).
+      - Competição: bônus por rapidez, até COMPETITION_MAX_POINTS, proporcional
+        à porcentagem do tempo de resposta da pergunta já gasta (zera ao usar
+        100% do tempo). A curva está em routines/figures.py.
     Retorna {sid: pontos de competição desta questão}.
     """
     # Avaliação
@@ -464,18 +483,12 @@ def _score_answers(game_state, correct_option_index):
 
     # Competição
     question_competition_points = {}
+    answer_duration = game_state.get('answer_duration')
     for sid, answer in game_state['answers'].items():
         try:
             if int(answer) == int(correct_option_index):
                 t = game_state['answers_time'].get(sid)
-                if t is not None and t >= 0:
-                    comp_points = int(
-                        constants.COMPETITION_MAX_POINTS
-                        * _sinc(t / constants.COMPETITION_HALF_WINDOW)
-                        ** constants.COMPETITION_EXPONENT
-                    )
-                else:
-                    comp_points = 0
+                comp_points = competition_points(t, answer_duration)
                 game_state['competition_scores'][sid] = (
                     game_state['competition_scores'].get(sid, 0) + comp_points
                 )

@@ -67,9 +67,9 @@ def api_analysis_run(run_id):
 
 
 def register(app):
-    app.add_url_rule('/analise', 'analysis_view', analysis_view)
-    app.add_url_rule('/analise/login', 'analysis_login', analysis_login,
+    app.add_url_rule('/analysis', 'analysis_view', analysis_view)
+    app.add_url_rule('/analysis/login', 'analysis_login', analysis_login,
                      methods=['GET', 'POST'])
-    app.add_url_rule('/analise/logout', 'analysis_logout', analysis_logout)
+    app.add_url_rule('/analysis/logout', 'analysis_logout', analysis_logout)
     app.add_url_rule('/api/analysis/runs', 'api_analysis_runs', api_analysis_runs)
     app.add_url_rule('/api/analysis/runs/<run_id>', 'api_analysis_run', api_analysis_run)

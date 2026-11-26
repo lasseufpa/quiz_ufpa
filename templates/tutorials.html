@@ -230,18 +230,22 @@
                 <em>rápido</em>: quem acerta primeiro leva mais, quem erra não pontua.</li>
         </ul>
 
-        <p>O bônus de <strong>competição</strong> depende do tempo que o aluno levou para
-            responder — e só vale para quem acertou:</p>
+        <p>O bônus de <strong>competição</strong> depende da <em>porcentagem do tempo de resposta
+da pergunta</em> que o aluno gastou — e só vale para quem acertou. Com \(t\) =
+tempo gasto e \(T\) = tempo de resposta daquela pergunta, \(p = 100\,t/T\):</p>
         <p class="score-formula">
-            \(\text{pts}(t) = \left\lfloor 200 \cdot \operatorname{sinc}^{4}\!\left(\dfrac{t}{60}\right) \right\rfloor\)
+            \(\text{pts}(p) = \left\lfloor 200 \cdot \operatorname{sinc}^{4}\!\left(\dfrac{p}{100}\right) \right\rfloor\)
         </p>
 
         <figure class="score-figure">
             {{ scoring_curve_svg | safe }}
             <figcaption>
                 A curva começa no máximo (200 pontos para quem responde na hora), cai
-                rápido — metade por volta dos 19&nbsp;s — e chega a <strong>zero em 60&nbsp;s</strong>:
-                depois disso, acertar ainda vale 1 ponto de avaliação, mas não rende bônus.
+                rápido — metade por volta de <strong>32% do tempo</strong> — e chega a
+                <strong>zero ao usar 100%</strong> do tempo de resposta: depois disso,
+                acertar ainda vale 1 ponto de avaliação, mas não rende bônus. Como o
+                cálculo usa a porcentagem, a mesma curva vale para perguntas de 10&nbsp;s
+                ou de 120&nbsp;s.
             </figcaption>
         </figure>
 
@@ -358,7 +362,7 @@
         </ul>
 
         <h4>Analisar uma execução</h4>
-        <p>Em <strong>📊 Análise</strong> (<code>/analise</code>, uma página própria como o editor e a
+        <p>Em <strong>📊 Análise</strong> (<code>/analysis</code>, uma página própria como o editor e a
             administração) você consulta as partidas já encerradas, protegido pela mesma senha do
             professor. Navegue por
             <strong>turma → quiz → "Quiz #n de dd/mm/aaaa"</strong> para ver os totais, o desempenho

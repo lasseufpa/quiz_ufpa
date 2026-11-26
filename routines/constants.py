@@ -43,10 +43,13 @@ TEAM_NAME_MAX_LENGTH = 24      # limite do nome editável no apresentador
 TEAM_TOP_N = 2          # quantos jogadores de cada time aparecem no PNG
 
 # --- Pontuação de competição (bônus por rapidez) ---
-# pts(t) = floor(COMPETITION_MAX_POINTS * sinc(t / COMPETITION_HALF_WINDOW) ^ EXP)
-# com sinc(x) = sin(pi x) / (pi x). Vale o máximo em t = 0 e zera em 60 s.
+# O bônus usa a PORCENTAGEM do tempo de resposta da pergunta que o aluno
+# gastou: T é o `answer_time` daquela pergunta e p = 100 * t / T.
+#   pts(p) = floor(COMPETITION_MAX_POINTS * sinc(p / 100) ^ EXPONENT)
+# com sinc(x) = sin(pi x) / (pi x). Vale o máximo em p = 0 (respondeu na
+# hora) e zera em p = 100 (usou todo o tempo de resposta da pergunta).
 # O guia do apresentador desenha essa curva a partir destes valores
 # (ver routines/figures.py).
 COMPETITION_MAX_POINTS = 200
-COMPETITION_HALF_WINDOW = 60
+COMPETITION_ZERO_PERCENT = 100    # % do tempo de resposta em que o bônus zera
 COMPETITION_EXPONENT = 4

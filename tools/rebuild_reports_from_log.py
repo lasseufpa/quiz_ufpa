@@ -47,11 +47,18 @@ _OPEN_ROOM_RE = re.compile(r'Sala aberta para a turma .+ \(modo time: (?P<mode>\
 _START_RE = re.compile(r"Iniciando o jogo da turma '(?P<class>[^']*)'!")
 
 
+# As execuções antigas (as únicas que este script reconstrói) foram pontuadas
+# com a janela FIXA de 60 s. O jogo atual usa a % do tempo de resposta de cada
+# pergunta, mas aqui é preciso repetir a fórmula da época para que os totais
+# confiram com o CSV gravado na partida.
+LEGACY_HALF_WINDOW = 60
+
+
 def competition_points(elapsed):
-    """Mesma curva usada em `game_logic._score_answers`."""
+    """Curva de competição das partidas antigas (janela fixa de 60 s)."""
     if elapsed is None or elapsed < 0:
         return 0
-    t = elapsed / constants.COMPETITION_HALF_WINDOW
+    t = elapsed / LEGACY_HALF_WINDOW
     sinc = math.sin(math.pi * t + 1e-5) / (math.pi * t + 1e-5)
     return int(constants.COMPETITION_MAX_POINTS * sinc ** constants.COMPETITION_EXPONENT)
 

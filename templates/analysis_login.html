@@ -1,6 +1,10 @@
 {% extends "layout.html" %}
 {% block title %}Análise - Entrar{% endblock %}
 {% block content %}
+{% set active_mode = 'analysis' %}
+{% set guide_anchor = 'administrador' %}
+{% include '_side_menu.html' %}
+
 <div class="login-container">
     <h2>📊 Modo Análise</h2>
     <p class="analysis-login-hint">
@@ -22,4 +26,8 @@
         line-height: 1.5;
     }
 </style>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/help_menu.js') }}"></script>
 {% endblock %}

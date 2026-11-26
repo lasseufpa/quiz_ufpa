@@ -30,7 +30,7 @@ async function loadTree() {
     try {
         const res = await fetch('/api/analysis/runs');
         if (res.status === 401) {
-            window.location.href = '/analise/login';
+            window.location.href = '/analysis/login';
             return;
         }
         const data = await res.json();
@@ -108,7 +108,7 @@ async function loadRun(runId) {
     try {
         const res = await fetch(`/api/analysis/runs/${encodeURIComponent(runId)}`);
         if (res.status === 401) {
-            window.location.href = '/analise/login';
+            window.location.href = '/analysis/login';
             return;
         }
         if (!res.ok) throw new Error('Execução não encontrada');

@@ -79,7 +79,7 @@ senhas e os CSVs de resultado continuam lá mesmo se o container for apagado.
 | **Apresentador** | `http://localhost:5000/host` | Conduzir a partida (pede senha) |
 | **Administração** | `http://localhost:5000/admin` | Cadastrar os alunos de cada turma (pede senha) |
 | **Editor** | `http://localhost:5000/editor` | Criar turmas, quizzes e copiar quizzes entre turmas (pede a senha do administrador) |
-| **Análise** | `http://localhost:5000/analise` | Ver as pontuações de cada execução, por pergunta e por aluno (pede senha) |
+| **Análise** | `http://localhost:5000/analysis` | Ver as pontuações de cada execução, por pergunta e por aluno (pede senha) |
 | **Guias** | `http://localhost:5000/guia` | Tutoriais de uso de cada tela |
 
 A senha do apresentador, da administração e do editor é a mesma: a que você
@@ -248,7 +248,7 @@ número de execução:
 - `relatorio_..._<n>.json` — o mesmo conteúdo estruturado, usado pela tela de
   Análise.
 
-Para consultar, abra a página **📊 Análise** (`http://localhost:5000/analise`) —
+Para consultar, abra a página **📊 Análise** (`http://localhost:5000/analysis`) —
 ela é independente das demais, como o editor e a administração — e entre com a
 **senha do professor**. A lista é navegável por **turma → quiz →
 "Quiz #4 de 19/11/2026"** e cada execução mostra:
@@ -420,10 +420,15 @@ Cada jogador acumula **duas notas** ao mesmo tempo:
 - **Competição** — pontos extras por acerto **rápido**: acertar primeiro vale
   mais (até 200 pontos por pergunta). Quem erra não pontua.
 
-O bônus de competição cai com o tempo de resposta segundo
-$\text{pts}(t) = \left\lfloor 200 \cdot \operatorname{sinc}^{4}(t/60) \right\rfloor$:
-começa no máximo, cai pela metade por volta dos 19 s e **zera em 60 s**. A curva
-está desenhada no [guia do apresentador](http://localhost:5000/guia#apresentador).
+O bônus de competição cai conforme a **porcentagem do tempo de resposta da
+pergunta** que o aluno já gastou. Com $t$ = tempo gasto e $T$ = tempo de
+resposta daquela pergunta, $p = 100\,t/T$ e
+$\text{pts}(p) = \left\lfloor 200 \cdot \operatorname{sinc}^{4}(p/100) \right\rfloor$:
+começa no máximo (200 pontos para quem responde na hora), cai pela metade por
+volta de **32% do tempo** e **zera ao usar 100% do tempo de resposta**. Assim a
+mesma curva vale para perguntas de 10 s ou de 120 s — o que conta é a rapidez
+relativa ao tempo disponível. A curva está desenhada no
+[guia do apresentador](http://localhost:5000/guia#apresentador).
 
 Em cada pergunta, clique em **Mostrar Resultados** para revelar:
 
